@@ -144,9 +144,6 @@ document.addEventListener("mousedown", (event) => {
     }
 });
 
-windows.push(new AppStore(300, 250, 200, 200,"screen1"));
-gui_refresh();
-
 var screen_element = document.getElementById("screen1");
 screen_element.x=0
 screen_element.y=0
@@ -168,6 +165,8 @@ Object.values(fs.files["apps"]).forEach(element => {
         eval(element["main.js"])
     }
 });
+
+windows.push(new AppStore(300, 250, 200, 200,"screen1"));
 
 function main() {
     gui_refresh();
