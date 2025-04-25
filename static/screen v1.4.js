@@ -78,7 +78,7 @@ var screen = {
     text: function (x, y, text, id) {
       var sc = document.getElementById(id);
       var context = sc.getContext("2d");
-      context.font = "15px Arial";
+      context.font = screen.text.font;
       a = text.split("\n");
       for (i = 0; i < a.length; i++) {
         context.fillText(a[i], x, y + i * 20);
@@ -91,6 +91,41 @@ var screen = {
       var sc = document.getElementById(id);
       var context = sc.getContext("2d");
       context.fillRect(x, y, 1, 1);
+    }
+  },
+  text: {
+    font: "15px Arial",
+    change_font: function (size, font, id) {
+      screen.text.font = size + " " + font
+      var sc = document.getElementById(id);
+      var context = sc.getContext("2d");
+      context.font = screen.text.font;
+    },
+    get_width: function (text, id) {
+      const canvas = document.getElementById(id);
+      const ctx = canvas.getContext('2d');
+
+      // Set the font before measuring
+      ctx.font = screen.text.font;
+
+      const metrics = ctx.measureText(text);
+      return metrics.width
+    },
+    wrap_text: function (x, y, max_width, text, id) {
+      words = text.split(" ");
+      n=0
+      j=0
+      for (let i = 0; i < words.length; i++) {
+        var test_line = words.slice(j, i).join(" ")
+        if (screen.text.get_width(test_line,id) > max_width) {
+          var new_line = words.slice(j, i-1).join(" ")
+          j=i-1
+          screen.draw.text(x,y+n*20,new_line,id)
+          n+=1
+        }          
+      }
+      var new_line = words.slice(j).join(" ")
+          screen.draw.text(x,y+n*20,new_line,id)
     }
   },
   color: function (color, id) {

@@ -64,6 +64,12 @@ function html_to_screen(x, y) {
   };
 }
 
+function point_in_rect(px, py, x, y, w, h) {
+  var in_x = px >= x && (x + w) >= px
+  var in_y = py >= y && (y + h) >= py
+  return in_x && in_y
+}
+
 class Window {
   constructor(x, y, width, height, name) {
     this.x = x;
@@ -135,7 +141,11 @@ class Window {
     );
   }
 
-  kill() {} // Placeholder for kill method
+  _scroll(x, y) { } // Placeholder for scroll event
+
+  _click(x, y) { } // Placeholder for click event
+
+  kill() { } // Placeholder for kill method
 
   move(x, y) {
     this.x = x;
@@ -177,16 +187,16 @@ class Window {
   }
 
   update() {
-    if (this.x > client_display_rect.width-20) {
+    if (this.x > client_display_rect.width - 20) {
       this.x = client_display_rect.width - 20;
     }
-    if (this.y > client_display_rect.height-20) {
-      this.y = client_display_rect.height - 20 ;
+    if (this.y > client_display_rect.height - 20) {
+      this.y = client_display_rect.height - 20;
     }
-    if (this.x < -this.width+20) {
+    if (this.x < -this.width + 20) {
       this.x = 20 - this.width;
     }
-    if (this.y < -this.height+20) {
+    if (this.y < -this.height + 20) {
       this.y = 20 - this.height;
     }
   }
@@ -196,6 +206,8 @@ class AppStore extends Window {
   constructor(x, y, width, height) {
     super(x, y, width, height, "App Store");
     this.appList = [];
+    this.screen = -1
+    this.scroll = 0
     if (!navigator.onLine) {
       console.error("No internet connection");
       screen.color(pallete.Main_Error, "screen1");
@@ -229,12 +241,11 @@ class AppStore extends Window {
 
           const appData = await appResponse.json();
           pre_applist.push(appData);
-          console.log("App data fetched", appData);
         } catch (appErr) {
           console.error("Failed to fetch app", appErr);
           this.displayError(
             "An error occurred while getting the app list:\n" +
-              this.getErrorMessage(appErr)
+            this.getErrorMessage(appErr)
           );
           return;
         }
@@ -244,7 +255,7 @@ class AppStore extends Window {
       console.error("Failed to fetch app list", err);
       this.displayError(
         "An error occurred while getting the app list:\n" +
-          this.getErrorMessage(err)
+        this.getErrorMessage(err)
       );
     }
   }
@@ -264,7 +275,6 @@ class AppStore extends Window {
     return "Unknown error";
   }
 
-  // ✅ Helper: Displays error on screen
   displayError(message) {
     screen.color(pallete.Main_Error, "screen1");
     screen.draw.text(this.x + 5, this.y + this.height / 2, message, "screen1");
@@ -274,47 +284,159 @@ class AppStore extends Window {
     this.appList.push(app);
   }
 
+  _scroll(x,y) {
+    this.scroll = this.scroll +y*3
+    if (this.scroll >= this.appList.length*40) {
+      this.scroll -= (this.scroll - this.appList.length*40)/5
+    } else if (this.scroll < 0) {
+      this.scroll += (-this.scroll)/5
+    }
+  }
+
+  _click(x, y) {
+    if (this.screen == -1) {
+      var i = Math.floor((y - 30) / 40)
+      this.screen = i
+    } else {
+      if (point_in_rect(x, y, this.width - 30, 30, 20, 20)) {
+        this.screen = -1
+      } else if (point_in_rect(x, y, 6, this.height - 23, this.width-12, 20)) {
+        window.open(this.appList[this.screen].license_url)
+      } else if (point_in_rect(x, y, this.width-55, 55,45,20)) {
+        console.error("App Download Unimplimented")
+      }
+    }
+  }
+
   draw() {
     super.draw();
-    if (this.appList.length === 0 || typeof this.appList[0] === "string") {
-      screen.color(pallete.Window_Title_Text, "screen1");
-      screen.draw.text(
-        this.x + 5,
-        this.y + this.height / 2,
-        "No apps available",
-        "screen1"
-      );
-      return;
-    }
-    this.appList.forEach((app, i) => {
+    if (this.screen == -1) {
+      if (this.appList.length === 0 || typeof this.appList[0] === "string") {
+        screen.color(pallete.Window_Title_Text, "screen1");
+        screen.draw.text(
+          this.x + 5,
+          this.y + this.height / 2,
+          "No apps available",
+          "screen1"
+        );
+        return;
+      }
+      this.appList.forEach((app, i) => {
+        screen.color(pallete.Window_Title_BG, "screen1");
+        screen.draw.rectangle(
+          this.x + 4,
+          this.y + 30 + i * 40,
+          this.width - 8,
+          35,
+          "screen1"
+        );
+        screen.color(pallete.Window_Title_Text, "screen1");
+        screen.draw.text(this.x + 6, this.y + 45 + i * 50 + this.scroll, app.name, "screen1");
+        var context = screen.getCanvas("screen1").getContext("2d");
+        context.textAlign = "right";
+        screen.draw.text(
+          this.x + this.width - 6,
+          this.y + 60 + i * 50,
+          app.author,
+          "screen1"
+        );
+        context.textAlign = "left";
+        screen.draw.text(
+          this.x + 6,
+          this.y + 60 + i * 50,
+          app.version,
+          "screen1"
+        );
+      });
+    } else {
+      var app = this.appList[this.screen]
       screen.color(pallete.Window_Title_BG, "screen1");
       screen.draw.rectangle(
         this.x + 4,
-        this.y + 30 + i * 20,
+        this.y + 24,
         this.width - 8,
-        35,
+        this.height - 28,
         "screen1"
       );
+
+      screen.color(pallete.Window_Title_Close_Outline, "screen1")
+      screen.draw.rectangle(this.x + this.width-30,this.y+30,20,20,"screen1")
+      screen.color(pallete.Window_Shadow, "screen1")
+      screen.draw.rectangle(this.x + this.width-29,this.y+31,18,18,"screen1")
+      screen.color(pallete.Window_Title_Close_Outline, "screen1")
+      screen.text.font = "25px Arial"
+      screen.draw.text(this.x + this.width-33,this.y+46,"←", "screen1")
+      screen.text.font = "15px Arial"
+
+      screen.color(pallete.Window_Title_Close_Outline, "screen1")
+      screen.draw.rectangle(this.x + this.width-55,this.y+55,45,20,"screen1")
+      screen.color(pallete.Main_Success, "screen1")
+      screen.draw.rectangle(this.x + this.width-54,this.y+56,43,18,"screen1")
+      screen.color(pallete.Window_Title_Close_Outline, "screen1")
+      screen.draw.text(this.x + this.width-51,this.y+70,"Install", "screen1")
+
       screen.color(pallete.Window_Title_Text, "screen1");
-      screen.draw.text(this.x + 6, this.y + 45 + i * 50, app.name, "screen1");
+      screen.draw.text(this.x + 6, this.y + 40, app.name, "screen1");
       var context = screen.getCanvas("screen1").getContext("2d");
-      context.textAlign = "right";
       screen.draw.text(
-        this.x + this.width-6,
-        this.y + 60 + i * 50,
+        this.x + 6,
+        this.y + 55,
         app.author,
         "screen1"
       );
-      context.textAlign = "left";
       screen.draw.text(
         this.x + 6,
-        this.y + 60 + i * 50,
+        this.y + 70,
         app.version,
         "screen1"
       );
-    });
+      screen.text.wrap_text(
+        this.x + 6,
+        this.y + 90,
+        this.width - 12,
+        app.description,
+        "screen1"
+      )
+      screen.draw.text(
+        this.x + 6,
+        this.y+this.height-6,
+        app.license,
+        "screen1"
+      )
+    }
   }
 }
+
+document.addEventListener("scroll", (event) => {
+  var { x: mouseX, y: mouseY } = html_to_screen(event.clientX, event.clientY);
+  const LINE_HEIGHT = 16;
+  let deltaY = event.deltaY;
+  let deltaX = event.deltaX
+
+  // Normalize if needed
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+    deltaY *= LINE_HEIGHT;
+    deltaX *= LINE_HEIGHT;
+  } else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+    deltaY *= window.innerHeight;
+    deltaX *= window.innerHeight
+  }
+
+  for (let i = windows.length - 1; i >= 0; i--) {
+    const window = windows[i];
+
+    if (point_in_rect(
+      mouseX,
+      mouseY,
+      window.x,
+      window.y+20,
+      window.width,
+      window.height-20
+    )) {
+      window._scroll(deltaX, deltaY)
+    }
+  }
+});
 
 document.addEventListener("mousedown", (event) => {
   var { x: mouseX, y: mouseY } = html_to_screen(event.clientX, event.clientY);
@@ -322,12 +444,13 @@ document.addEventListener("mousedown", (event) => {
   for (let i = windows.length - 1; i >= 0; i--) {
     const window = windows[i];
 
-    if (
-      mouseX >= window.x &&
-      mouseX <= window.x + window.width - 18 &&
-      mouseY >= window.y &&
-      mouseY <= window.y + 20
-    ) {
+    if (point_in_rect(
+      mouseX,
+      mouseY,
+      window.x,
+      window.y,
+      window.width - 20,
+      20)) {
       // Move clicked window to the end (top)
       windows.push(windows.splice(i, 1)[0]);
 
@@ -337,15 +460,27 @@ document.addEventListener("mousedown", (event) => {
       window.dragStart();
 
       break; // Stop after the topmost hit window
-    } else if (
-      mouseX >= window.x + window.width - 19 &&
-      mouseX <= window.x + window.width - 1 &&
-      mouseY >= window.y + 1 &&
-      mouseY <= window.y + window.y + 19
-    ) {
+    } else if (point_in_rect(
+      mouseX,
+      mouseY,
+      window.x+window.width-19,
+      window.y+1,
+      19,
+      19)) {
       window.kill(); // Close window
       windows.splice(i, 1); // Remove from array
       gui_refresh(); // Refresh GUI
+    } else if (point_in_rect(
+      mouseX,
+      mouseY,
+      window.x,
+      window.y+20,
+      window.width,
+      window.height-20)) {
+      // Move clicked window to the end (top)
+      windows.push(windows.splice(i, 1)[0]);
+
+      window._click(mouseX - window.x, mouseY - window.y)
     }
   }
 });

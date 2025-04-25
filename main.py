@@ -6,6 +6,10 @@ app = flask.Flask(__name__)
 def index():
     return flask.send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), 'index.html')
 
+@app.route('/favicon.ico')
+def send_favicon():
+    return flask.send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), "favicon.ico")
+
 @app.route('/static/<path:path>')
 def send_static(path):
     return flask.send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), path)
