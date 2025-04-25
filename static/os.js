@@ -47,7 +47,6 @@ function gui_refresh() {
         window.update(); // Update window content
     });
 }
-
 function screen_to_html(x, y) {
     // Convert screen coordinates to HTML coordinates
     return {
@@ -55,7 +54,6 @@ function screen_to_html(x, y) {
         y: y + client_display_rect.top,
     };
 }
-
 function html_to_screen(x, y) {
     // Convert HTML coordinates to screen coordinates
     return {
@@ -63,7 +61,6 @@ function html_to_screen(x, y) {
         y: y - client_display_rect.top,
     };
 }
-
 function point_in_rect(px, py, x, y, w, h) {
     var in_x = px >= x && (x + w) >= px
     var in_y = py >= y && (y + h) >= py
@@ -100,7 +97,6 @@ document.addEventListener("scroll", (event) => {
         }
     }
 });
-
 document.addEventListener("mousedown", (event) => {
     var { x: mouseX, y: mouseY } = html_to_screen(event.clientX, event.clientY);
 
@@ -155,16 +151,30 @@ var screen_element = document.getElementById("screen1");
 screen_element.x=0
 screen_element.y=0
 screen_element.style.position = "absolute";
-window.fs = new FS() // File system
+try {
+    window.fs = new FS(localStorage.getItem("fs"))
+} catch (error) {
+    // Create a new file system if it doesn't exist
+    window.fs = new FS()
+}
+
+Object.values(fs.files["apps"]).forEach(element => {
+    if (Object.hasOwnProperty.call(element, "main.js")) {
+        if (element.name == "AppStore") {
+            // Skip the AppStore itself
+            return
+        }
+        // Load the app
+        eval(element["main.js"])
+    }
+});
 
 function main() {
     gui_refresh();
 }
 
 setInterval(main, 1000 / 30); // 30 FPS
-setInterval(() => {
-    localStorage.setItem("fs", JSON.stringify(fs));
-}, 1000); // Save every second
+setInterval(window.fs.save.bind(fs), 1000); // Save every second
 
 window.addEventListener("resize", () => {
     var screen_element = document.getElementById("screen1");

@@ -25,6 +25,26 @@ class FS {
         });
     }
 
+    save() {
+        try {
+            localStorage.setItem("fs", JSON.stringify(this.files));
+        } catch (error) {
+            console.error("Failed to save to localStorage:", error);
+        }
+    }
+
+    static load(data) {
+        const fs = new FS();
+        try {
+            if (data) {
+                fs.files = JSON.parse(data);
+            }
+        } catch (error) {
+            console.error("Failed to load from localStorage:", error);
+        }
+        return fs;
+    }
+
     write(path, data) {
         path = path.split("/")
         let folder = this.files

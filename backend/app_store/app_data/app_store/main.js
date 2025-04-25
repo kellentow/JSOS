@@ -83,7 +83,7 @@ class AppStore extends Window {
     async download(appid) {
         console.error("Downloading and installing app: " + appid);
 
-        fs = this.fs
+        fs = window.fs
 
         const zipResponse = await fetch("/backend/app_store/download/" + appid);
         if (!zipResponse.ok) throw zipResponse;
@@ -93,16 +93,25 @@ class AppStore extends Window {
         zip.forEach(async function (relativePath, zipEntry) {
             if (!zipEntry.dir) {
                 const content = await zipEntry.async("string");
-                fs.write("apps/"+appid+"/"+relativePath, content);
+                fs.write("apps/" + appid + "/" + relativePath, content);
             }
         });
 
         console.log("App installed successfully. Running main.js...");
-        const mainScript = fs.read("main.js");
-        if (mainScript) {
+        var mainScript = fs.read("apps/" + appid + "/main.js");
+        let n = 0
+        while (mainScript === undefined || mainScript === null) {
+            if (n > 10) {
+                console.error("main.js not found in the app package");
+                return
+            }
+            n++
+            console.log("Waiting for main.js to be downloaded...");
+            mainScript = fs.read("apps/" + appid + "/main.js");
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        if (mainScript != null || mainScript != undefined) {
             eval(mainScript); // Execute the main.js script
-        } else {
-            console.error("main.js not found in the app package.");
         }
     }
 
