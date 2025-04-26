@@ -351,7 +351,16 @@ class AppStore extends Window {
             } else if (point_in_rect(x, y, 6, this.height - 23, this.width - 12, 20)) {
                 window.open(this.appList[this.screen].license_url)
             } else if (point_in_rect(x, y, this.width - 55, 55, 45, 20)) {
-                this.download(this.appList[this.screen].appid)
+                if (this.appList[this.screen].appid == null) {
+                    this.download(this.appList[this.screen].appid)
+                    fs.write("apps/" + this.appList[this.screen].appid + "/version", this.appList[this.screen].version)
+                } else if (this.appList[this.screen].version < fs.read("apps/" + this.appList[this.screen].appid + "/version")) {
+                    fs.write("apps/" + this.appList[this.screen].appid, {}) // Clear the app folder
+                    this.download(this.appList[this.screen].appid) // Download the app again
+                    fs.write("apps/" + this.appList[this.screen].appid + "/version", this.appList[this.screen].version) // Save the version
+                } else {
+                    eval(fs.read("apps/"+this.appList[this.screen].appid+"/main.js"))
+                }
             }
         }
     }
@@ -421,7 +430,17 @@ class AppStore extends Window {
             screen.color(pallete.Main_Success, this.screenid)
             screen.draw.rectangle(this.x + this.width - 54, this.y + 56, 43, 18, this.screenid)
             screen.color(pallete.Window_Title_Close_Outline, this.screenid)
-            screen.draw.text(this.x + this.width - 51, this.y + 70, "Install", this.screenid)
+            if (app.appid == null) {
+                screen.draw.text(this.x + this.width - 51, this.y + 70, "Install", this.screenid)
+            } else if (app.version < fs.read("apps/" + app.appid + "/version")) {
+                screen.draw.text(this.x + this.width - 51, this.y + 70, "Update", this.screenid)
+            } else {
+                screen.color(pallete.Main_Title_BG, this.screenid)
+                screen.draw.rectangle(this.x + this.width - 54, this.y + 56, 43, 18, this.screenid)
+                screen.draw.text(this.x + this.width - 51, this.y + 70, "  Open", this.screenid)
+                eval(fs.read("apps/"+app.appid+"/main.js"))
+            }
+            
 
             screen.color(pallete.Window_Title_Text, this.screenid);
             screen.draw.text(this.x + 6, this.y + 40, app.name, this.screenid);
