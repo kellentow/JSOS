@@ -28,6 +28,7 @@ pallete = {
 
 screen.draw.screen(window.innerWidth, window.innerHeight, "screen1");
 windows = [];
+let keysPressed = {};
 client_display_rect = document
   .getElementById("screen1")
   .getBoundingClientRect();
@@ -46,6 +47,13 @@ function gui_refresh() {
     window.draw(); // Draw window frame
     window.update(); // Update window content
   });
+}
+function os_keybinds() { 
+  if (keysPressed["Tab"] && keysPressed["r"]) {
+    keysPressed["Tab"] = false;
+    // Open run dialog
+    windows.push(new RunDialog(300, 250, "screen1"));
+  }
 }
 function screen_to_html(x, y) {
   // Convert screen coordinates to HTML coordinates
@@ -174,6 +182,19 @@ document.addEventListener("mousedown", (event) => {
     }
   }
 });
+document.addEventListener('keydown', (event) => {
+  keysPressed[event.key] = true;
+    event.preventDefault();
+
+    if (event.key != "Tab") { // Ignore sys keybinds
+      // Tell the window that a key was pressed
+      const window = windows[windows.length - 1];
+      window._keypress(event.key);
+    }
+});
+document.addEventListener('keyup', (event) => {
+  delete keysPressed[event.key];
+});
 
 var screen_element = document.getElementById("screen1");
 screen_element.x = 0;
@@ -184,7 +205,7 @@ try {
 } catch (error) {
   // Create a new file system if it doesn't exist
   window.fs = new FS();
-  console.log(error);
+  console.error(error);
 }
 
 Object.values(fs.read("apps")).forEach((element) => {
@@ -197,7 +218,9 @@ Object.values(fs.read("apps")).forEach((element) => {
 windows.push(new AppStore(300, 250, 200, 200, "screen1"));
 
 function main() {
+  os_keybinds()
   gui_refresh();
+
 }
 
 setInterval(main, 1000 / 30); // 30 FPS

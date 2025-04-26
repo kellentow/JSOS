@@ -13,16 +13,6 @@ req.add("jszip.js", "3.10.1");
 class FS {
     constructor() {
         this.files = { "apps": {} }
-        this.write("apps/app_store/metadata", {
-            "appid": "app_store",
-            "name": "App Store",
-            "author": "JSOS Dev",
-            "version": "1.0",
-            "description": "The app store for the OS.",
-            "license": "MPL 2.0",
-            "license_url": "https://www.mozilla.org/en-US/MPL/2.0/",
-            "hash": null
-        });
     }
 
     save() {
@@ -65,7 +55,7 @@ class FS {
         let folder = this.files;
         for (var i = 0; i < pathParts.length; i++) {
             if (!folder[pathParts[i]]) {
-                console.error("File not found: " + pathParts.join("/"));
+                console.warn("File not found: " + pathParts.join("/"));
                 return null;
             }
             folder = folder[pathParts[i]];
@@ -207,6 +197,8 @@ class Window {
         }
     }
 
+    _keypress(key) {} // Placeholder for keypress event
+
     update() {
         if (this.x > client_display_rect.width - 20) {
             this.x = client_display_rect.width - 20;
@@ -306,7 +298,7 @@ class AppStore extends Window {
     }
 
     async download(appid) {
-        console.error("Downloading and installing app: " + appid);
+        console.debug("Downloading and installing app: " + appid);
 
         fs = window.fs
 
@@ -322,7 +314,7 @@ class AppStore extends Window {
             }
         });
 
-        console.log("App installed successfully. Running main.js...");
+        console.info("App installed successfully. Running main.js...");
         var mainScript = fs.read("apps/" + appid + "/main.js");
         let n = 0
         while (mainScript === undefined || mainScript === null) {
@@ -331,7 +323,7 @@ class AppStore extends Window {
                 return
             }
             n++
-            console.log("Waiting for main.js to be downloaded...");
+            console.info("Waiting for main.js to be downloaded...");
             mainScript = fs.read("apps/" + appid + "/main.js");
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
@@ -460,5 +452,67 @@ class AppStore extends Window {
                 this.screenid
             )
         }
+    }
+}
+
+class SysMsg extends Window {
+    constructor(screenid, msg) {
+        super(100, 100, 100, 50, "System Message", screenid);
+        this.message = msg;
+        }
+
+    draw() {
+        super.draw();
+        screen.color(pallete.Window_Title_Text, this.screenid);
+        screen.text.wrap_text(this.x + 5, this.y + 40, this.width, this.message, this.screenid);
+    }
+}
+
+class RunDialog extends Window {
+    constructor(x, y, screenid) {
+        super(x, y, 125, 82, "Run", screenid);
+        this.input = "";
+    }
+
+    _keypress(key) {
+        if (key === "Enter") {
+            this.runCommand(this.input);
+            this.input = "";
+        } else if (key === "Backspace") {
+            this.input = this.input.slice(0, -1);
+        } else if (key.length === 1) {
+            this.input += key;
+        }
+    }
+
+    runCommand(command) {
+        this.kill()
+        gui_refresh();
+        if (command === "exit") {
+            this.kill();
+            return;
+        } else if (window.fs.read("apps/" + command + "/main.js") != null) {
+            var mainScript = window.fs.read("apps/" + command + "/main.js");
+            if (mainScript != null || mainScript != undefined) {
+                eval(mainScript); // Execute the main.js script
+            }
+        } else {
+            windows.push(new SysMsg(this.screenid, "Command not found: " + command));
+        }
+    }
+    draw() {
+        super.draw();
+        screen.color(pallete.Window_Title_Text, this.screenid);
+        screen.draw.text(this.x + 5, this.y + 47, "Command:", this.screenid);
+        screen.color(pallete.Window_Title_BG, this.screenid);
+        screen.draw.rectangle(
+            this.x + 3,
+            this.y + 60,
+            this.width - 6,
+            19,
+            this.screenid
+        );
+        screen.color(pallete.Window_Title_Text, this.screenid);
+        screen.draw.text(this.x + 5, this.y + 77, this.input, this.screenid);
     }
 }
