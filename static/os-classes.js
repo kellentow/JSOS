@@ -359,18 +359,17 @@ class AppStore extends Window {
         });
 
         console.info("App installed successfully. Running main.js...");
-        var mainScript = fs.read("apps/" + appid + "/main.js");
         let n = 0
-        while (mainScript === undefined || mainScript === null) {
+        while (!fs.path_exists("apps/" + appid + "/main.js")) {
             if (n > 10) {
                 console.error("main.js not found in the app package");
                 return
             }
             n++
             console.info("Waiting for main.js to be downloaded...");
-            mainScript = fs.read("apps/" + appid + "/main.js");
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
+        const mainScript = fs.read("apps/" + appid + "/main.js");
         if (mainScript != null || mainScript != undefined) {
             eval(mainScript); // Execute the main.js script
         }

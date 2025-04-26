@@ -27,9 +27,6 @@ pallete = {
 };
 
 screen.draw.screen(window.innerWidth, window.innerHeight, "screen1");
-screen.draw.screen(0, 0, "WindowSandbox");
-let window_element = document.getElementById("WindowSandbox");
-window_element.style.display = "none";
 windows = [];
 let keysPressed = {};
 client_display_rect = document
