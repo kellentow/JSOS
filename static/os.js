@@ -228,7 +228,7 @@ function main() {
 }
 
 setInterval(main, 1000 / 30); // 30 FPS
-setInterval(window.fs.save.bind(fs), 1000); // Save every second
+setInterval(window.fs.save.bind(fs), 5000); // Save every second
 
 window.addEventListener("resize", () => {
   var screen_element = document.getElementById("screen1");

@@ -252,7 +252,7 @@ class AppStore extends Window {
             screen.color(pallete.Main_Error, this.screenid);
             screen.draw.text(
                 5,
-                this.y + this.height / 2,
+                this.height / 2,
                 "Failed to fetch app list\nAre you online?",
                 this.screenid
             );
@@ -316,7 +316,7 @@ class AppStore extends Window {
 
     displayError(message) {
         screen.color(pallete.Main_Error, this.screenid);
-        screen.draw.text(5, this.y + this.height / 2, message, this.screenid);
+        screen.draw.text(5, this.height / 2, message, this.screenid);
     }
 
     addApp(app) {
@@ -397,7 +397,7 @@ class AppStore extends Window {
                 screen.color(pallete.Window_Title_Text, this.screenid);
                 screen.draw.text(
                     5,
-                    this.y + this.height / 2,
+                    this.height / 2,
                     "No apps available",
                     this.screenid
                 );
@@ -407,25 +407,25 @@ class AppStore extends Window {
                 screen.color(pallete.Window_Title_BG, this.screenid);
                 screen.draw.rectangle(
                     4,
-                    this.y + 30 + i * 40,
+                    30 + i * 40,
                     this.width - 8,
                     35,
                     this.screenid
                 );
                 screen.color(pallete.Window_Title_Text, this.screenid);
-                screen.draw.text(6, this.y + 45 + i * 40 + this.scroll, app.name, this.screenid);
+                screen.draw.text(6, 45 + i * 40 + this.scroll, app.name, this.screenid);
                 var context = screen.getCanvas(this.screenid).getContext("2d");
                 context.textAlign = "right";
                 screen.draw.text(
                     this.width - 6,
-                    this.y + 60 + i * 40,
+                    60 + i * 40,
                     app.author,
                     this.screenid
                 );
                 context.textAlign = "left";
                 screen.draw.text(
                     6,
-                    this.y + 60 + i * 40,
+                    60 + i * 40,
                     app.version,
                     this.screenid
                 );
@@ -435,61 +435,61 @@ class AppStore extends Window {
             screen.color(pallete.Window_Title_BG, this.screenid);
             screen.draw.rectangle(
                 4,
-                this.y + 24,
+                24,
                 this.width - 8,
                 this.height - 28,
                 this.screenid
             );
 
             screen.color(pallete.Window_Title_Close_Outline, this.screenid)
-            screen.draw.rectangle(this.width - 30, this.y + 30, 20, 20, this.screenid)
+            screen.draw.rectangle(this.width - 30, 30, 20, 20, this.screenid)
             screen.color(pallete.Window_Shadow, this.screenid)
-            screen.draw.rectangle(this.width - 29, this.y + 31, 18, 18, this.screenid)
+            screen.draw.rectangle(this.width - 29, 31, 18, 18, this.screenid)
             screen.color(pallete.Window_Title_Close_Outline, this.screenid)
             screen.text.font = "25px Arial"
-            screen.draw.text(this.width - 33, this.y + 46, "←", this.screenid)
+            screen.draw.text(this.width - 33, 46, "←", this.screenid)
             screen.text.font = "15px Arial"
 
             screen.color(pallete.Window_Title_Close_Outline, this.screenid)
-            screen.draw.rectangle(this.width - 55, this.y + 55, 45, 20, this.screenid)
+            screen.draw.rectangle(this.width - 55, 55, 45, 20, this.screenid)
             screen.color(pallete.Main_Success, this.screenid)
-            screen.draw.rectangle(this.width - 54, this.y + 56, 43, 18, this.screenid)
+            screen.draw.rectangle(this.width - 54, 56, 43, 18, this.screenid)
             screen.color(pallete.Window_Title_Close_Outline, this.screenid)
             if (!fs.path_exists("apps/" + app.appid + "/main.js")) {
-                screen.draw.text(this.width - 51, this.y + 70, "Install", this.screenid)
+                screen.draw.text(this.width - 51, 70, "Install", this.screenid)
             } else if (req.is_older(app.version,fs.read("apps/" + app.appid + "/version"))) {
-                screen.draw.text(this.width - 51, this.y + 70, "Update", this.screenid)
+                screen.draw.text(this.width - 51, 70, "Update", this.screenid)
             } else {
                 screen.color(pallete.Window_Title_BG, this.screenid)
-                screen.draw.rectangle(this.width - 55, this.y + 55, 45, 20, this.screenid)
+                screen.draw.rectangle(this.width - 55, 55, 45, 20, this.screenid)
             }
             
 
             screen.color(pallete.Window_Title_Text, this.screenid);
-            screen.draw.text(6, this.y + 40, app.name, this.screenid);
+            screen.draw.text(6, 40, app.name, this.screenid);
             var context = screen.getCanvas(this.screenid).getContext("2d");
             screen.draw.text(
                 6,
-                this.y + 55,
+                55,
                 app.author,
                 this.screenid
             );
             screen.draw.text(
                 6,
-                this.y + 70,
+                70,
                 app.version,
                 this.screenid
             );
             screen.text.wrap_text(
                 6,
-                this.y + 90,
+                90,
                 this.width - 12,
                 app.description,
                 this.screenid
             )
             screen.draw.text(
                 6,
-                this.y + this.height - 6,
+                this.height - 6,
                 app.license,
                 this.screenid
             )
@@ -506,7 +506,7 @@ class SysMsg extends Window {
     draw() {
         super.draw();
         screen.color(pallete.Window_Title_Text, this.screenid);
-        screen.text.wrap_text(5, this.y + 40, this.width, this.message, this.screenid);
+        screen.text.wrap_text(5, 40, this.width, this.message, this.screenid);
     }
 }
 
@@ -545,16 +545,16 @@ class RunDialog extends Window {
     draw() {
         super.draw();
         screen.color(pallete.Window_Title_Text, this.screenid);
-        screen.draw.text(5, this.y + 47, "Command:", this.screenid);
+        screen.draw.text(5, 47, "Command:", this.screenid);
         screen.color(pallete.Window_Title_BG, this.screenid);
         screen.draw.rectangle(
             3,
-            this.y + 60,
+            60,
             this.width - 6,
             19,
             this.screenid
         );
         screen.color(pallete.Window_Title_Text, this.screenid);
-        screen.draw.text(5, this.y + 77, this.input, this.screenid);
+        screen.draw.text(5, 77, this.input, this.screenid);
     }
 }
