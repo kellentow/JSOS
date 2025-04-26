@@ -2,9 +2,30 @@ import flask, os, importlib.util, sys
 
 app = flask.Flask(__name__)
 
+ka = int(os.getenv("ka", "0"))
+ping = os.getenv("ping", "https://example.com/")
+
+if ka > 0:
+    import threading
+    import time
+    import requests
+
+    def KA_ping():
+        while True:
+            try:
+                requests.get(ping)
+            except Exception as e:
+                print(f"Error pinging {ping}: {e}")
+            time.sleep(ka)
+    threading.Thread(target=KA_ping, daemon=True).start()
+
 @app.route('/')
 def index():
     return flask.send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), 'index.html')
+
+@app.route("/ka")
+def ka():
+    return "", 200
 
 @app.route('/favicon.ico')
 def send_favicon():
