@@ -80,10 +80,20 @@ class Window {
     constructor(x, y, width, height, name) {
         this.x = x;
         this.y = y;
-        this.screenid = "WindowSandbox"
+        this.screenid = "Window" + windows.length;
+        this.window_element = document.getElementById(this.screenid)
+        if (this.window_element == null) {
+            screen.draw.screen(width, height, this.screenid);
+            this.window_element = document.getElementById(this.screenid);
+        } else {
+            this.window_element.width = width
+            this.window_element.height = height;
+        }
+        this.window_element.style.display = "none";
         this.width = width;
         this.height = height;
         this.name = name;
+        this.FLAG_redraw = true;
         this.isDragging = false;
         this.isResizing = false;
         this.draggingOffset = { x: 0, y: 0 };
@@ -94,18 +104,17 @@ class Window {
 
     drawFlush() {
         let screen_element = document.getElementById("screen1");
-        let window_element = document.getElementById("WindowSandbox");
 
         const ctx = screen_element.getContext('2d');
 
         // Paste only the in-bounds area (0,0 to 300,300)
-        ctx.drawImage(window_element, this.x, this.y);
+        ctx.drawImage(this.window_element, this.x, this.y);
     }
 
     draw() {
-        let window_element = document.getElementById("WindowSandbox");
-        window_element.width = this.width
-        window_element.height = this.height
+        this.flag_redraw = false;
+        this.window_element.width = this.width
+        this.window_element.height = this.height
 
         // Draw window frame
         screen.color(pallete.Window_Border, this.screenid);
@@ -172,15 +181,23 @@ class Window {
     } // Placeholder for kill method
 
     move(x, y) {
+        screen.color("FFFFFF", "screen1");
+        screen.draw.rectangle(
+            this.x,
+            this.y,
+            this.x+this.width,
+            this.y+this.height,
+            "screen1"
+        );
         this.x = x;
         this.y = y;
-        gui_refresh();
+        this.drawFlush();
     }
 
     resize(width, height) {
         this.width = Math.max(width,50);
         this.height = Math.max(height,50);
-        gui_refresh();
+        this.FLAG_redraw = true;
     }
 
     setTitle(name) {
@@ -290,6 +307,7 @@ class AppStore extends Window {
                 }
             }
             this.appList = pre_applist;
+            this.FLAG_redraw = true;
         } catch (err) {
             console.error("Failed to fetch app list", err);
             this.displayError(
@@ -356,9 +374,11 @@ class AppStore extends Window {
         if (mainScript != null || mainScript != undefined) {
             eval(mainScript); // Execute the main.js script
         }
+        this.FLAG_redraw = true;
     }
 
     _scroll(x, y) {
+        this.FLAG_redraw = true;
         this.scroll = this.scroll + y * 3
         if (this.scroll >= this.appList.length * 40) {
             this.scroll -= (this.scroll - this.appList.length * 40) / 5
@@ -368,6 +388,7 @@ class AppStore extends Window {
     }
 
     _click(x, y, detail) {
+        this.FLAG_redraw = true;
         if (this.screen == -1) {
             var i = Math.floor((y - 30) / 40)
             this.screen = i

@@ -47,7 +47,10 @@ function gui_refresh() {
     "screen1"
   );
   windows.forEach((window) => {
-    window.draw(); // Draw window frame
+    if (window.FLAG_redraw) {
+      window.draw();
+      window.FLAG_redraw = false;
+    }
     window.drawFlush(); // Flush window content
     window.update(); // Update window content
   });

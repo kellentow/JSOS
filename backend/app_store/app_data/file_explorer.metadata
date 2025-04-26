@@ -2,7 +2,7 @@
     "name":"File Explorer",
     "appid":"file_explorer",
     "description":"Basic file explorer that lets you view the file system.",
-    "version":"1.0.5",
+    "version":"1.0.6",
     "author":"JSOS Dev",
     "license":"MPL 2.0",
     "license_url":"https://www.mozilla.org/en-US/MPL/2.0/",
