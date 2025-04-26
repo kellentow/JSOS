@@ -47,6 +47,18 @@ class FS {
         folder[path[path.length-1]] = data
     }
 
+    path_exists(path) {
+        path = path.split("/")
+        let folder = this.files
+        for (var i = 0; i < path.length; i++) {
+            if (!folder[path[i]]) {
+                return false
+            }
+            folder = folder[path[i]]
+        }
+        return true
+    }
+
     read(path) {
         if (path === "") {
             return this.files
@@ -65,10 +77,10 @@ class FS {
 }
 
 class Window {
-    constructor(x, y, width, height, name, screenid) {
+    constructor(x, y, width, height, name) {
         this.x = x;
         this.y = y;
-        this.screenid = screenid
+        this.screenid = "WindowSandbox"
         this.width = width;
         this.height = height;
         this.name = name;
@@ -80,22 +92,36 @@ class Window {
         this._onMouseUp = this.mouse_up.bind(this);
     }
 
+    drawFlush() {
+        let screen_element = document.getElementById("screen1");
+        let window_element = document.getElementById("WindowSandbox");
+
+        const ctx = screen_element.getContext('2d');
+
+        // Paste only the in-bounds area (0,0 to 300,300)
+        ctx.drawImage(window_element, this.x, this.y);
+    }
+
     draw() {
+        let window_element = document.getElementById("WindowSandbox");
+        window_element.width = this.width
+        window_element.height = this.height
+
         // Draw window frame
         screen.color(pallete.Window_Border, this.screenid);
         screen.draw.rectangle(this.x, this.y, this.width, this.height, this.screenid);
         screen.color(pallete.Window_Shadow, this.screenid);
         screen.draw.rectangle(
-            this.x + 1,
-            this.y + 1,
+            1,
+            1,
             this.width - 1,
             this.height - 1,
             this.screenid
         );
         screen.color(pallete.Window_BG, this.screenid);
         screen.draw.rectangle(
-            this.x + 1,
-            this.y + 1,
+            1,
+            1,
             this.width - 2,
             this.height - 2,
             this.screenid
@@ -104,34 +130,34 @@ class Window {
         // Draw title bar
         screen.color(pallete.Window_Title_BG, this.screenid);
         screen.draw.rectangle(
-            this.x + 3,
-            this.y + 3,
+            3,
+            3,
             this.width - 6,
             19,
             this.screenid
         );
         screen.color(pallete.Window_Title_Text, this.screenid);
-        screen.draw.text(this.x + 5, this.y + 17, this.name, this.screenid);
+        screen.draw.text(5, 17, this.name, this.screenid);
         screen.color(pallete.Window_Title_Close_Outline, this.screenid)
         screen.draw.rectangle(
-            this.x + this.width - 22,
-            this.y + 3,
+            this.width - 22,
+            3,
             18,
             18,
             this.screenid
         );
         screen.color(pallete.Window_Title_Close, this.screenid);
         screen.draw.rectangle(
-            this.x + this.width - 21,
-            this.y + 4,
+            this.width - 21,
+            4,
             16,
             16,
             this.screenid
         );
         screen.color(pallete.Window_Title_Close_Outline, this.screenid);
         screen.draw.text(
-            this.x + this.width - 18,
-            this.y + 17,
+            this.width - 18,
+            17,
             "X",
             this.screenid
         );
@@ -225,7 +251,7 @@ class AppStore extends Window {
             console.error("No internet connection");
             screen.color(pallete.Main_Error, this.screenid);
             screen.draw.text(
-                this.x + 5,
+                5,
                 this.y + this.height / 2,
                 "Failed to fetch app list\nAre you online?",
                 this.screenid
@@ -290,7 +316,7 @@ class AppStore extends Window {
 
     displayError(message) {
         screen.color(pallete.Main_Error, this.screenid);
-        screen.draw.text(this.x + 5, this.y + this.height / 2, message, this.screenid);
+        screen.draw.text(5, this.y + this.height / 2, message, this.screenid);
     }
 
     addApp(app) {
@@ -346,20 +372,19 @@ class AppStore extends Window {
             var i = Math.floor((y - 30) / 40)
             this.screen = i
         } else {
+            var app = this.appList[this.screen]
             if (point_in_rect(x, y, this.width - 30, 30, 20, 20)) {
                 this.screen = -1
             } else if (point_in_rect(x, y, 6, this.height - 23, this.width - 12, 20)) {
-                window.open(this.appList[this.screen].license_url)
+                window.open(app.license_url)
             } else if (point_in_rect(x, y, this.width - 55, 55, 45, 20)) {
-                if (this.appList[this.screen].appid == null) {
-                    this.download(this.appList[this.screen].appid)
-                    fs.write("apps/" + this.appList[this.screen].appid + "/version", this.appList[this.screen].version)
-                } else if (this.appList[this.screen].version < fs.read("apps/" + this.appList[this.screen].appid + "/version")) {
-                    fs.write("apps/" + this.appList[this.screen].appid, {}) // Clear the app folder
-                    this.download(this.appList[this.screen].appid) // Download the app again
-                    fs.write("apps/" + this.appList[this.screen].appid + "/version", this.appList[this.screen].version) // Save the version
-                } else {
-                    eval(fs.read("apps/"+this.appList[this.screen].appid+"/main.js"))
+                if (!fs.path_exists("apps/"+app.appid+"/main.js")) {
+                    this.download(app.appid)
+                    fs.write("apps/" + app.appid + "/version", app.version)
+                } else if (req.is_older(app.version,fs.read("apps/" + app.appid + "/version"))) {
+                    fs.write("apps/" + app.appid, {}) // Clear the app folder
+                    this.download(app.appid) // Download the app again
+                    fs.write("apps/" + app.appid + "/version", app.version) // Save the version
                 }
             }
         }
@@ -371,7 +396,7 @@ class AppStore extends Window {
             if (this.appList.length === 0 || typeof this.appList[0] === "string") {
                 screen.color(pallete.Window_Title_Text, this.screenid);
                 screen.draw.text(
-                    this.x + 5,
+                    5,
                     this.y + this.height / 2,
                     "No apps available",
                     this.screenid
@@ -381,25 +406,25 @@ class AppStore extends Window {
             this.appList.forEach((app, i) => {
                 screen.color(pallete.Window_Title_BG, this.screenid);
                 screen.draw.rectangle(
-                    this.x + 4,
+                    4,
                     this.y + 30 + i * 40,
                     this.width - 8,
                     35,
                     this.screenid
                 );
                 screen.color(pallete.Window_Title_Text, this.screenid);
-                screen.draw.text(this.x + 6, this.y + 45 + i * 40 + this.scroll, app.name, this.screenid);
+                screen.draw.text(6, this.y + 45 + i * 40 + this.scroll, app.name, this.screenid);
                 var context = screen.getCanvas(this.screenid).getContext("2d");
                 context.textAlign = "right";
                 screen.draw.text(
-                    this.x + this.width - 6,
+                    this.width - 6,
                     this.y + 60 + i * 40,
                     app.author,
                     this.screenid
                 );
                 context.textAlign = "left";
                 screen.draw.text(
-                    this.x + 6,
+                    6,
                     this.y + 60 + i * 40,
                     app.version,
                     this.screenid
@@ -409,7 +434,7 @@ class AppStore extends Window {
             var app = this.appList[this.screen]
             screen.color(pallete.Window_Title_BG, this.screenid);
             screen.draw.rectangle(
-                this.x + 4,
+                4,
                 this.y + 24,
                 this.width - 8,
                 this.height - 28,
@@ -417,55 +442,53 @@ class AppStore extends Window {
             );
 
             screen.color(pallete.Window_Title_Close_Outline, this.screenid)
-            screen.draw.rectangle(this.x + this.width - 30, this.y + 30, 20, 20, this.screenid)
+            screen.draw.rectangle(this.width - 30, this.y + 30, 20, 20, this.screenid)
             screen.color(pallete.Window_Shadow, this.screenid)
-            screen.draw.rectangle(this.x + this.width - 29, this.y + 31, 18, 18, this.screenid)
+            screen.draw.rectangle(this.width - 29, this.y + 31, 18, 18, this.screenid)
             screen.color(pallete.Window_Title_Close_Outline, this.screenid)
             screen.text.font = "25px Arial"
-            screen.draw.text(this.x + this.width - 33, this.y + 46, "←", this.screenid)
+            screen.draw.text(this.width - 33, this.y + 46, "←", this.screenid)
             screen.text.font = "15px Arial"
 
             screen.color(pallete.Window_Title_Close_Outline, this.screenid)
-            screen.draw.rectangle(this.x + this.width - 55, this.y + 55, 45, 20, this.screenid)
+            screen.draw.rectangle(this.width - 55, this.y + 55, 45, 20, this.screenid)
             screen.color(pallete.Main_Success, this.screenid)
-            screen.draw.rectangle(this.x + this.width - 54, this.y + 56, 43, 18, this.screenid)
+            screen.draw.rectangle(this.width - 54, this.y + 56, 43, 18, this.screenid)
             screen.color(pallete.Window_Title_Close_Outline, this.screenid)
-            if (app.appid == null) {
-                screen.draw.text(this.x + this.width - 51, this.y + 70, "Install", this.screenid)
-            } else if (app.version < fs.read("apps/" + app.appid + "/version")) {
-                screen.draw.text(this.x + this.width - 51, this.y + 70, "Update", this.screenid)
+            if (!fs.path_exists("apps/" + app.appid + "/main.js")) {
+                screen.draw.text(this.width - 51, this.y + 70, "Install", this.screenid)
+            } else if (req.is_older(app.version,fs.read("apps/" + app.appid + "/version"))) {
+                screen.draw.text(this.width - 51, this.y + 70, "Update", this.screenid)
             } else {
-                screen.color(pallete.Main_Title_BG, this.screenid)
-                screen.draw.rectangle(this.x + this.width - 54, this.y + 56, 43, 18, this.screenid)
-                screen.draw.text(this.x + this.width - 51, this.y + 70, "  Open", this.screenid)
-                eval(fs.read("apps/"+app.appid+"/main.js"))
+                screen.color(pallete.Window_Title_BG, this.screenid)
+                screen.draw.rectangle(this.width - 55, this.y + 55, 45, 20, this.screenid)
             }
             
 
             screen.color(pallete.Window_Title_Text, this.screenid);
-            screen.draw.text(this.x + 6, this.y + 40, app.name, this.screenid);
+            screen.draw.text(6, this.y + 40, app.name, this.screenid);
             var context = screen.getCanvas(this.screenid).getContext("2d");
             screen.draw.text(
-                this.x + 6,
+                6,
                 this.y + 55,
                 app.author,
                 this.screenid
             );
             screen.draw.text(
-                this.x + 6,
+                6,
                 this.y + 70,
                 app.version,
                 this.screenid
             );
             screen.text.wrap_text(
-                this.x + 6,
+                6,
                 this.y + 90,
                 this.width - 12,
                 app.description,
                 this.screenid
             )
             screen.draw.text(
-                this.x + 6,
+                6,
                 this.y + this.height - 6,
                 app.license,
                 this.screenid
@@ -483,7 +506,7 @@ class SysMsg extends Window {
     draw() {
         super.draw();
         screen.color(pallete.Window_Title_Text, this.screenid);
-        screen.text.wrap_text(this.x + 5, this.y + 40, this.width, this.message, this.screenid);
+        screen.text.wrap_text(5, this.y + 40, this.width, this.message, this.screenid);
     }
 }
 
@@ -522,16 +545,16 @@ class RunDialog extends Window {
     draw() {
         super.draw();
         screen.color(pallete.Window_Title_Text, this.screenid);
-        screen.draw.text(this.x + 5, this.y + 47, "Command:", this.screenid);
+        screen.draw.text(5, this.y + 47, "Command:", this.screenid);
         screen.color(pallete.Window_Title_BG, this.screenid);
         screen.draw.rectangle(
-            this.x + 3,
+            3,
             this.y + 60,
             this.width - 6,
             19,
             this.screenid
         );
         screen.color(pallete.Window_Title_Text, this.screenid);
-        screen.draw.text(this.x + 5, this.y + 77, this.input, this.screenid);
+        screen.draw.text(5, this.y + 77, this.input, this.screenid);
     }
 }

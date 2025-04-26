@@ -27,6 +27,9 @@ pallete = {
 };
 
 screen.draw.screen(window.innerWidth, window.innerHeight, "screen1");
+screen.draw.screen(0, 0, "WindowSandbox");
+let window_element = document.getElementById("WindowSandbox");
+window_element.style.display = "none";
 windows = [];
 let keysPressed = {};
 client_display_rect = document
@@ -45,6 +48,7 @@ function gui_refresh() {
   );
   windows.forEach((window) => {
     window.draw(); // Draw window frame
+    window.drawFlush(); // Flush window content
     window.update(); // Update window content
   });
 }
@@ -208,14 +212,14 @@ try {
   console.error(error);
 }
 
+windows.push(new AppStore(300, 250, 200, 200, "screen1"));
+
 Object.values(fs.read("apps")).forEach((element) => {
   if (Object.hasOwnProperty.call(element, "main.js")) {
     // Load the app
     eval(element["main.js"]);
   }
 });
-
-windows.push(new AppStore(300, 250, 200, 200, "screen1"));
 
 function main() {
   os_keybinds()
