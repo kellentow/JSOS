@@ -58,6 +58,9 @@ class FS {
     }
 
     read(path) {
+        if (path === "") {
+            return this.files
+        }
         const pathParts = path.split("/");
         let folder = this.files;
         for (var i = 0; i < pathParts.length; i++) {
@@ -80,10 +83,11 @@ class Window {
         this.height = height;
         this.name = name;
         this.isDragging = false;
+        this.isResizing = false;
         this.draggingOffset = { x: 0, y: 0 };
 
-        this._onMouseMove = this.drag.bind(this);
-        this._onMouseUp = this.dragEnd.bind(this);
+        this._onMouseMove = this.mouse_move.bind(this);
+        this._onMouseUp = this.mouse_up.bind(this);
     }
 
     draw() {
@@ -145,9 +149,11 @@ class Window {
 
     _scroll(x, y) { } // Placeholder for scroll event
 
-    _click(x, y) { } // Placeholder for click event
+    _click(x, y, detail) { } // Placeholder for click event
 
-    kill() { } // Placeholder for kill method
+    kill() {
+        windows = windows.filter((window) => window !== this);
+    } // Placeholder for kill method
 
     move(x, y) {
         this.x = x;
@@ -156,8 +162,8 @@ class Window {
     }
 
     resize(width, height) {
-        this.width = width;
-        this.height = height;
+        this.width = Math.max(width,50);
+        this.height = Math.max(height,50);
         gui_refresh();
     }
 
@@ -172,19 +178,32 @@ class Window {
         document.addEventListener("mouseup", this._onMouseUp);
     }
 
-    dragEnd() {
+    resizeStart() {
+        this.isResizing = true;
+        document.addEventListener("mousemove", this._onMouseMove);
+        document.addEventListener("mouseup", this._onMouseUp);
+    }
+
+    mouse_up() {
         this.isDragging = false;
+        this.isResizing = false;
         document.removeEventListener("mousemove", this._onMouseMove);
         document.removeEventListener("mouseup", this._onMouseUp);
     }
 
-    drag(event) {
+    mouse_move(event) {
         if (this.isDragging) {
             var { x: mouseX, y: mouseY } = html_to_screen(
                 event.clientX,
                 event.clientY
             );
             this.move(mouseX - this.draggingOffset.x, mouseY - this.draggingOffset.y);
+        } else if (this.isResizing) {
+            var { x: mouseX, y: mouseY } = html_to_screen(
+                event.clientX,
+                event.clientY
+            );
+            this.resize(mouseX - this.x, mouseY - this.y);
         }
     }
 
@@ -330,7 +349,7 @@ class AppStore extends Window {
         }
     }
 
-    _click(x, y) {
+    _click(x, y, detail) {
         if (this.screen == -1) {
             var i = Math.floor((y - 30) / 40)
             this.screen = i
@@ -368,19 +387,19 @@ class AppStore extends Window {
                     this.screenid
                 );
                 screen.color(pallete.Window_Title_Text, this.screenid);
-                screen.draw.text(this.x + 6, this.y + 45 + i * 50 + this.scroll, app.name, this.screenid);
+                screen.draw.text(this.x + 6, this.y + 45 + i * 40 + this.scroll, app.name, this.screenid);
                 var context = screen.getCanvas(this.screenid).getContext("2d");
                 context.textAlign = "right";
                 screen.draw.text(
                     this.x + this.width - 6,
-                    this.y + 60 + i * 50,
+                    this.y + 60 + i * 40,
                     app.author,
                     this.screenid
                 );
                 context.textAlign = "left";
                 screen.draw.text(
                     this.x + 6,
-                    this.y + 60 + i * 50,
+                    this.y + 60 + i * 40,
                     app.version,
                     this.screenid
                 );
