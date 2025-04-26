@@ -180,13 +180,14 @@ screen_element.x = 0;
 screen_element.y = 0;
 screen_element.style.position = "absolute";
 try {
-  window.fs = new FS(localStorage.getItem("fs"));
+  window.fs = FS.load(localStorage.getItem("fs"));
 } catch (error) {
   // Create a new file system if it doesn't exist
   window.fs = new FS();
+  console.log(error);
 }
 
-Object.values(fs.files["apps"]).forEach((element) => {
+Object.values(fs.read("apps")).forEach((element) => {
   if (Object.hasOwnProperty.call(element, "main.js")) {
     // Load the app
     eval(element["main.js"]);
