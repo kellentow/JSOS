@@ -9,11 +9,12 @@ class TaskManager extends Window {
     }
 
     _click(x, y, detail) {
-        i = Math.round((y - this.scroll+23) / 35);
+        i = Math.round((y - this.scroll+3) / 35)-1;
         console.log("click", x, y, i, detail);
         if (x > this.width - 30 && x < this.width - 5 && detail == 1) {
             if (i >= 0 && i < windows.length) {
                 windows[i].kill();
+                setTimeout(() => {this.FLAG_redraw = true},100)
                 return;
             }
         }
@@ -23,8 +24,8 @@ class TaskManager extends Window {
         super.draw();
         let w = null;
 
-        for (let i = 0; i < windows.length; i++) {
-            w = windows[i];
+        for (let i = 0; i < window.windows.length; i++) {
+            w = window.windows[i];
             let y_start = i*35 + this.scroll;
             screen.color(pallete.Window_Title_BG,this.screenid)
             screen.draw.rectangle(3, 23 + y_start, this.width - 6, 30, this.screenid);

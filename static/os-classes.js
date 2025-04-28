@@ -126,7 +126,7 @@ class Window {
     }
 
     draw() {
-        this.flag_redraw = false;
+        this.FLAG_redraw = false;
         this.window_element.width = this.width
         this.window_element.height = this.height
 

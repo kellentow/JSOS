@@ -28,6 +28,7 @@ pallete = {
 
 screen.draw.screen(window.innerWidth, window.innerHeight, "screen1");
 windows = [];
+this.windows = windows
 let keysPressed = {};
 client_display_rect = document
   .getElementById("screen1")
