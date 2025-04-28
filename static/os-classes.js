@@ -10,9 +10,18 @@ try {
 req.add("screen.js", "1.4");
 req.add("jszip.js", "3.10.1");
 
+function debounce(fn, wait = 200) {
+    let timeout;
+    return function(...args) {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn.apply(this, args), wait);
+    };
+}
+
 class FS {
     constructor() {
-        this.files = { "apps": {} }
+        this.files = { "apps": {}}
+        this._saveTimeout = null;
     }
 
     save() {
@@ -45,6 +54,11 @@ class FS {
             folder = folder[path[i]]
         }
         folder[path[path.length-1]] = data
+
+        clearTimeout(this._saveTimeout);
+        this._saveTimeout = setTimeout(() => {
+          this.save();
+        }, 250); // Save after 250ms of not writing
     }
 
     path_exists(path) {
@@ -185,8 +199,8 @@ class Window {
         screen.draw.rectangle(
             this.x,
             this.y,
-            this.x+this.width,
-            this.y+this.height,
+            this.width,
+            this.height,
             "screen1"
         );
         this.x = x;
@@ -372,6 +386,7 @@ class AppStore extends Window {
         const mainScript = fs.read("apps/" + appid + "/main.js");
         if (mainScript != null || mainScript != undefined) {
             eval(mainScript); // Execute the main.js script
+            console.log(mainScript)
         }
         this.FLAG_redraw = true;
     }

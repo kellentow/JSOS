@@ -82,8 +82,7 @@ function point_in_circle(px, py, cx, cy, r) {
   var dist = Math.sqrt(Math.pow(px - cx, 2) + Math.pow(py - cy, 2));
   return dist <= r;
 }
-
-document.addEventListener("scroll", (event) => {
+function on_scroll(event) {
   var { x: mouseX, y: mouseY } = html_to_screen(event.clientX, event.clientY);
   const LINE_HEIGHT = 16;
   let deltaY = event.deltaY;
@@ -114,8 +113,8 @@ document.addEventListener("scroll", (event) => {
       window._scroll(deltaX, deltaY);
     }
   }
-});
-document.addEventListener("mousedown", (event) => {
+}
+function on_click(event) {
   var { x: mouseX, y: mouseY } = html_to_screen(event.clientX, event.clientY);
 
   for (let i = windows.length - 1; i >= 0; i--) {
@@ -140,7 +139,7 @@ document.addEventListener("mousedown", (event) => {
       window.draggingOffset.y = mouseY - window.y;
       window.dragStart();
 
-      break; // Stop after the topmost hit window
+      return; // Stop after the topmost hit window
     } else if (
       point_in_rect(
         // Close button
@@ -154,6 +153,7 @@ document.addEventListener("mousedown", (event) => {
     ) {
       window.kill(); // Close window
       gui_refresh(); // Refresh GUI
+      return;
     } else if (
       point_in_rect(
         // Window Content
@@ -169,6 +169,7 @@ document.addEventListener("mousedown", (event) => {
       windows.push(windows.splice(i, 1)[0]);
 
       window._click(mouseX - window.x, mouseY - window.y, event.detail);
+      return;
     } else if (
       point_in_circle(
         // Resize detector
@@ -182,28 +183,36 @@ document.addEventListener("mousedown", (event) => {
       // Resize clicked window to the end (top)
       windows.push(windows.splice(i, 1)[0]);
       window.resizeStart();
-      break; // Stop after the topmost hit window
+      return; // Stop after the topmost hit window
     }
   }
-});
-document.addEventListener('keydown', (event) => {
+}
+function on_keydown(event) {
   keysPressed[event.key] = true;
     event.preventDefault();
 
     if (event.key != "Tab") { // Ignore sys keybinds
       // Tell the window that a key was pressed
       const window = windows[windows.length - 1];
-      window._keypress(event.key);
+      if (window) {
+        window.FLAG_redraw = true; // Mark window for redraw
+        window._keypress(event.key);
+      }
     }
-});
-document.addEventListener('keyup', (event) => {
+}
+function on_keyup(event) {
   delete keysPressed[event.key];
-});
+}
+
+document.addEventListener("scroll", on_scroll);
+document.addEventListener("mousedown", (event) => { debounce(on_click, 50)(event); }); // Debounce click event
+document.addEventListener('keydown', on_keydown);
+document.addEventListener('keyup', on_keyup);
 
 var screen_element = document.getElementById("screen1");
-screen_element.x = 0;
-screen_element.y = 0;
 screen_element.style.position = "absolute";
+screen_element.style.top = 0;
+screen_element.style.left = 0;
 try {
   window.fs = FS.load(localStorage.getItem("fs"));
 } catch (error) {
@@ -222,14 +231,13 @@ Object.values(fs.read("apps")).forEach((element) => {
 });
 
 function main() {
-  os_keybinds()
+  os_keybinds();
   gui_refresh();
-
 }
 
 setInterval(main, 1000 / 30); // 30 FPS
-setInterval(window.fs.save.bind(fs), 5000); // Save every second
 
+window.dispatchEvent(new Event("resize")); // Trigger resize event to set initial size
 window.addEventListener("resize", () => {
   var screen_element = document.getElementById("screen1");
   screen_element.width = window.innerWidth;

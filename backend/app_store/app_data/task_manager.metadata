@@ -1,0 +1,10 @@
+{
+    "name":"Task Manager",
+    "appid":"task_manager",
+    "description":"A app that lets you see what is open.",
+    "version":"1.0.0",
+    "author":"JSOS Dev",
+    "license":"MPL 2.0",
+    "license_url":"https://www.mozilla.org/en-US/MPL/2.0/",
+    "hash":null
+}
