@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",          // or ES6+, what the browser supports
+    "module": "ESNext",          // important! tells TS to keep ES module syntax
+    "moduleResolution": "node",  // helps with path resolution
+    "outDir": "./dist",          // where compiled JS goes
+    "strict": true,              // optional, good practice
+    "esModuleInterop": true      // optional, makes imports from commonjs easier
+  }
+}
