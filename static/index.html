@@ -1,12 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JSOS Online</title>
+    <style>
+        body {
+            overflow: hidden
+        }
+    </style>
+    <link rel="manifest" href="/static/manifest.json">
 </head>
+
 <body>
-    <script type = "module" src="/static/os-classes.js"></script>
-    <script type = "module" src="/static/os.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/service-worker.js')
+                .then(() => console.log('Service Worker registered'))
+                .catch(err => console.error('Service Worker failed:', err));
+        }
+    </script>
+    <script type="module" src="/static/src/os-classes.js"></script>
+    <script type="module" src="/static/src/os.js"></script>
 </body>
+
 </html>

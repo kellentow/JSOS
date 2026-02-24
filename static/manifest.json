@@ -1,0 +1,11 @@
+{
+  "name": "JSOS",
+  "short_name": "JSOS",
+  "description": "JSOS, an OS for the internet",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0078d7",
+  "icons": [
+  ]
+}

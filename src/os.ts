@@ -1,5 +1,6 @@
-import JSZip from 'jszip';
-import {OS,OS_Process} from './os-classes.js'
+import { OS, OS_Process } from './os-classes.js'
+// @ts-ignore
+import { unzip } from 'https://unpkg.com/unzipit@1.4.2/dist/unzipit.module.js';
 
 let os = new OS()
 let root_proc = os.getRootProc() as OS_Process
@@ -7,13 +8,25 @@ let root_proc = os.getRootProc() as OS_Process
 let canvas: HTMLCanvasElement = document.getElementById("viewport") as any as HTMLCanvasElement
 let ctx = canvas?.getContext("2d")
 
-ctx?.strokeText("Please wait",1,1)
+ctx?.strokeText("Please wait", 1, 1)
 
-let glass_bytes:any = await fetch("/backend/app_store/download/glass").then((resp) => resp.arrayBuffer())
-let glass_zip:any = await JSZip.loadAsync(glass_bytes)
-let glass_code = await glass_zip.file("main.js")?.async("string")
+async function run_app(name:string,procname:string) {
+    const resp = await fetch("/backend/app_store/download/"+name);
+    const arrayBuffer = await resp.arrayBuffer();
 
-glass_bytes = null
-glass_zip = null
+    // unzip the file
+    const { entries } = await unzip(arrayBuffer);
+    const mainEntry = entries["index.js"];
+    let app_code: string | undefined;
+    if (mainEntry) {
+        const blob = await mainEntry.blob(); // or use .text() for direct string
+        app_code = await blob.text();
+        await root_proc.createChildProcess(procname, app_code as string)
+    } else {
+        console.error(entries)
+        throw new Error("Failed to get "+name)
+    }
+}
 
-let glass = os.createProcess(root_proc,"Glass",glass_code)
+await run_app("Glass","Glass")
+await run_app("Glasstop","Glasstop")

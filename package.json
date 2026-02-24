@@ -1,6 +1,9 @@
 {
   "dependencies": {
-    "@types/jszip": "^3.4.1",
+    "@types/jszip": "^3.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
     "jszip": "^3.10.1"
   }
 }

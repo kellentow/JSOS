@@ -1,9 +1,21 @@
+function waitForNonNull(getValue: () => any | null, interval = 50) {
+    return new Promise(resolve => {
+        const check = setInterval(() => {
+            const value = getValue();
+            if (value != null) {
+                clearInterval(check);
+                resolve(value);
+            }
+        }, interval);
+    });
+}
+
 enum Permission {
-    CreateProcess = 0,
-    UseFilesystem = 1,
-    NetworkAccess = 2,
-    ExecuteCode = 3,
-    EditDom = 4,
+    CreateProcess = 1<<0,
+    UseFilesystem = 1<<1,
+    NetworkAccess = 1<<2,
+    ExecuteCode =   1<<3,
+    EditDom =       1<<4,
 }
 
 enum OSErrorCode {
@@ -20,33 +32,28 @@ class OSError extends Error {
     }
 }
 
-class ProcessKey {}
+class ProcessKey { }
 
 class OS { // NOT FINISHED
-    #processes:OS_Process[] = [];
-    #processKeys:Map<ProcessKey,OS_Process> = new Map();
-    #windows:OS_Window[] = [];
+    #processes: OS_Process[] = [];
+    #processKeys: Map<ProcessKey, OS_Process> = new Map();
 
-    #parents: Map<(OS_Process|OS_Window), (OS_Process|OS_Window)[]> = new Map();
-    #perms: Map<(OS_Process|OS_Window), number> = new Map();
+    #parents: Map<(OS_Process), (OS_Process)[]> = new Map();
+    #perms: Map<(OS_Process), number> = new Map();
     #scripts: Map<OS_Process, Sandbox> = new Map();
-    #window_htmls: Map<OS_Window, HTMLElement> = new Map();
 
     #lastPID: number = 0;
-    #root_proc:OS_Process;
+    #root_proc: OS_Process;
 
     constructor() {
-        this.#root_proc = new OS_Process("root",this,null,({} as any as Window))
-        let permission = 0
-        permission |= this.decodePermID(Permission.CreateProcess);
-        permission |= this.decodePermID(Permission.ExecuteCode);
-        permission |= this.decodePermID(Permission.NetworkAccess);
-        permission |= this.decodePermID(Permission.UseFilesystem);
-        this.#perms.set(this.#root_proc,permission)
+        this.#root_proc = new OS_Process("root", this, null, ({overrideEnv:(...args:any[])=>{}} as any as Sandbox))
+        this.#perms.set(this.#root_proc, 31)
+        this.#processes.push(this.#root_proc)
+        this.#processKeys.set(this.#root_proc.getKey() as ProcessKey,this.#root_proc)
+        this.#parents.set(this.#root_proc, []);
     }
 
-    getRootProc(): OS_Process | undefined {
-        this.getRootProc = () => {return undefined} // Legalize Nuclear Bombs *BOOM*
+    getRootProc(): OS_Process {
         return this.#root_proc
     }
 
@@ -55,42 +62,49 @@ class OS { // NOT FINISHED
         return this.#lastPID
     }
 
-    createProcess(parent:OS_Process,name:string,script:string): OS_Process {
-        const sandbox = new Sandbox(script)
+    async createProcess(parentKey: ProcessKey, name: string, script: string): Promise<OS_Process|undefined> {
+        if (!this.#processKeys.has(parentKey)) {return}
 
-        const env = sandbox.env()
+        const sandbox = new Sandbox(script, name, {})
 
-        let proc = new OS_Process(name, this, parent, env)
+        await waitForNonNull(() => sandbox.env(), 50)
+
+        let parent = this.#processKeys.get(parentKey) as OS_Process
+
+        let proc = new OS_Process(name, this, parent, sandbox)
 
         let key = proc.getKey() as ProcessKey
 
-        this.#processKeys.set(key,proc)
+        this.#processKeys.set(key, proc)
 
-        //@ts-ignore
-        env.os = this//@ts-ignore
-        env.proc = proc//@ts-ignore
-        env.IPCs = []//@ts-ignore
-        env.parent_doc = () => {
-            if (!this.#perms.has(proc)) {return}
-            if (((this.#perms.get(proc) as number) & (Permission.EditDom as number)) == 1) {
-                return document
-            } else {
-                return undefined
-            }
-        }
+        sandbox.overrideEnv({
+            os: this,
+            IPCs: [],
+            parent_doc: () => {
+                if (!this.#perms.has(proc)) { return }
+                if (((this.#perms.get(proc) as number) & (Permission.EditDom as number)) !== 0) {
+                    return document
+                } else {
+                    return undefined
+                }
+            },
+            proc
+        });
 
-        this.#perms.set(proc,this.#perms.get(parent) as number)
+        this.#perms.set(proc, this.#perms.get(parent) as number)
 
         this.#parents.get(parent)?.push(proc)
 
-        this.#scripts.set(proc,sandbox)
+        this.#scripts.set(proc, sandbox)
 
         this.#processes.push(proc)
+
+        sandbox.load()
 
         return proc
     }
 
-    createIPC(self:OS_Process,target:OS_Process) {
+    createIPC(self: OS_Process, target: OS_Process) {
         let self_sand = this.#scripts.get(self)
         let target_sand = this.#scripts.get(target)
 
@@ -101,98 +115,38 @@ class OS { // NOT FINISHED
         //@ts-ignore
         self_sand?.env().IPCs.push(ipc.a_wrapper())
 
-        return ipc
+        //return ipc
     }
 
-    createWindow(parent:OS_Process,x:number,y:number,width:number,height:number,name:string): OS_Window {
-        let id = Math.random().toString(36).substring(2, 15)
-
-        const div = document.createElement("div");
-        div.id = id;
-        div.className = "os-window";
-        div.style.position = "absolute";
-        div.style.left = `${x}px`;
-        div.style.top = `${y}px`;
-        div.style.width = `${width}px`;
-        div.style.height = `${height}px`;
-        div.style.border = "1px solid black";
-        div.style.backgroundColor = "white";
-        div.style.boxShadow = "2px 2px 10px rgba(0,0,0,0.5)";
-        div.style.resize = "both";
-        div.style.overflow = "auto";
-        div.style.zIndex = "1";
-
-        const titleBar = document.createElement("div");
-        titleBar.style.width = "100%";
-        titleBar.style.height = "20px";
-        titleBar.style.backgroundColor = "#0078D7";
-        titleBar.style.color = "white";
-        titleBar.style.cursor = "move";
-        titleBar.style.display = "flex";
-        titleBar.style.alignItems = "center";
-        titleBar.style.paddingLeft = "5px";
-        titleBar.innerText = name;
-
-        const body = document.createElement("iframe");
-        body.id = `${id}-body`;
-        body.sandbox.add("allow-scripts");
-        body.style.width = "100%";
-        body.style.height = `calc(100% - 20px)`;
-        body.style.border = "none";
-        body.srcdoc = "<!doctype html><html><body></body></html>";
-
-        div.appendChild(body);
-        div.appendChild(titleBar);
-        document.body.appendChild(div);
-
-        let window = new OS_Window(x,y,width,height,name,this,parent,body.contentDocument as Document);
-
-        this.#parents.get(parent)?.push(window)
-
-        this.#windows.push(window)
-        this.#window_htmls.set(window,div)
-
-        return window
-    }
-
-    getPermissions(key:ProcessKey):number|null {
+    getPermissions(key: ProcessKey): number | null {
         let proc;
         if (this.#processKeys.has(key)) {
             proc = this.#processKeys.get(key) as OS_Process;
-        } else {return null}
+        } else { return null }
         if (this.#perms.has(proc)) {
             return this.#perms.get(proc) as number;
         }
         return null
     }
 
-    decodePermID(perm:number):number {
-        return (1<<perm)
-    }
-
-    killProcess(key:ProcessKey) {
+    killProcess(key: ProcessKey) {
         let proc;
         if (this.#processKeys.has(key)) {
             proc = this.#processKeys.get(key) as OS_Process;
-        } else {return null}
+        } else { return null }
         let kp = this.killProcess;
-        let kw = this.closeWindow;
-        function recursive(v:(OS_Process | OS_Window)) {
-            if (v instanceof OS_Process) {
-                kp(v)
-            } else if (v instanceof OS_Window) {
-                kw(v)
-            }
+        function recursive(v: OS_Process) {
+            kp(v)
         }
         this.#parents.get(proc)?.forEach(recursive)
         this.#scripts.delete(proc)
     }
 
-    requestPermissions(key:ProcessKey,n:number, reason:string) {
+    requestPermissions(key: ProcessKey, n: number, reason: string) {
         let proc;
         if (this.#processKeys.has(key)) {
             proc = this.#processKeys.get(key) as OS_Process;
-        } else {return null}
+        } else { return null }
         let permName = Permission[n]
         if (!permName || !this.#perms.has(proc)) {
             return
@@ -200,27 +154,9 @@ class OS { // NOT FINISHED
         let y = confirm(`Do you want to give "${proc.getName()}" this permission:\n${permName}\nReason: "${reason}"`)
         if (y) {
             let perms = this.#perms.get(proc) as number;
-            this.#perms.set(proc, perms+n);
+            this.#perms.set(proc, perms | n);
         }
     }
-
-    closeWindow(obj:OS_Window) {
-        let elem = this.#window_htmls.get(obj) as HTMLElement
-        elem.remove()
-        
-        let i = this.#windows.indexOf(obj)
-        this.#windows.splice(i, 1)
-        
-    }
-
-    updatePosition(obj:OS_Window,x:number,y:number) {}
-
-    updateSize(obj:OS_Window,width:number,height:number) {}
-
-    // TEMP CODE BELOW desktop not done
-    getDesktop() {return {
-        focusWindow(obj:OS_Window) {}
-    }}
 } // NOT FINISHED
 
 class FS {
@@ -254,7 +190,7 @@ class FS {
     write(path: string, data: any) {
         let path_arr = path.split("/")
         let folder = this.files
-        for (let i = 0; i < path.length - 1; i++) {
+        for (let i = 0; i < path_arr.length - 1; i++) {
             if (!folder[path_arr[i]]) {
                 folder[path_arr[i]] = {}
             }
@@ -265,7 +201,7 @@ class FS {
         if (this._saveTimeout) { clearTimeout(this._saveTimeout) };
         this._saveTimeout = setTimeout(() => {
             this.save();
-        }, 250); // Save after 250ms of not writing
+        }, 250) as unknown as number; // Save after 250ms of not writing
     }
 
     path_exists(path: string) {
@@ -299,27 +235,63 @@ class FS {
 
 class Sandbox {
     #element: HTMLIFrameElement;
-    constructor(script:string) {
+    #name: string;
+    constructor(script: string, name?: string, override?: Partial<Window>) {
+        this.#name = name || "UNKNOWN"
         this.#element = document.createElement("iframe");
-        this.#element.sandbox.add("allow-scripts");
+        this.#element.setAttribute("sandbox", "allow-scripts allow-same-origin"); 
         this.#element.style.width = "0px";
         this.#element.style.height = "0px";
         this.#element.style.border = "none";
-        this.#element.srcdoc = "<script>"+script+"</script>";
+        this.#element.srcdoc = "<script>" + script + "</script>";
 
-        let w = this.env()
-        let dummy = (...a:any[]):any=>{return () => {}}
-        w.alert = dummy()
-        w.confirm = dummy()
-        w.prompt = dummy()
-        // @ts-ignore
-        w.cookieStore = {} // @ts-ignore
-        w.indexedDB = {}  // @ts-ignore
-        w.document = {} 
+        let dummy = (...a: any[]): any => { return () => { } }
+        const good_console = globalThis.console
+        let windowConsole = {
+            ...good_console,
+            debug: (...args: any[]) => { good_console.debug(`[${this.#name}] `, ...args) },
+            log: (...args: any[]) => { good_console.log(`[${this.#name}] `, ...args) },
+            warn: (...args: any[]) => { good_console.warn(`[${this.#name}] `, ...args) },
+            error: (...args: any[]) => { good_console.error(`[${this.#name}] `, ...args) }
+        }
+
+        this.overrideEnv({
+            alert: dummy(),
+            confirm: dummy(),
+            prompt: dummy(), // @ts-ignore
+            cookieStore: {}, // @ts-ignore
+            indexedDB: {},   // @ts-ignore
+            document: {},
+            console: windowConsole,
+            ...override
+        })
+        document.body.appendChild(this.#element)
     }
 
-    env(): Window {
-        return this.#element.contentWindow as Window
+    env(): Window | null {
+        return this.#element.contentWindow
+    }
+
+    overrideEnv(override: Partial<Window>) {
+        const w = this.env();
+        if (w) {
+            for (let key in override) {
+                    try {
+                        // @ts-ignore
+                        w[key] = override[key];
+                    } catch {
+                        console.error(`[Sandbox Manager] Failed to overwrite ${key} on ${this.#name}`)
+                    }
+                }
+        } else {
+            this.#element.addEventListener("load", () => this.overrideEnv(override), { once: true });
+        }
+    }
+
+    load() {
+        const event = new CustomEvent("os-load");
+        console.log(`[Sandbox Manager] Loading ${this.#name}`);
+        ( this.env() as Window).document.dispatchEvent(event);
     }
 
     destroy() {
@@ -332,33 +304,35 @@ class OS_Process {
     #name: string;
     #os: OS;
     #parent: OS_Process | null;
-    #scriptenv:Window;
-    #key:ProcessKey;
-    children: (OS_Process|Window)[] = [];
-    constructor(name: string, os: any, parent: OS_Process | null = null, scriptenv: Window) {
+    #scriptenv: Sandbox;
+    #key: ProcessKey;
+    children: OS_Process[] = [];
+    constructor(name: string, os: any, parent: OS_Process | null = null, sandbox: Sandbox) {
         this.#pid = os.getNewPID();
         this.#name = name;
         this.#os = os; // Reference to the OS instance
         this.#parent = parent;
-        this.#scriptenv = scriptenv;
+        this.#scriptenv = sandbox;
         this.#key = new ProcessKey();
 
-        const w = scriptenv as any;
-        w.fetch = (input:RequestInfo,init?:RequestInit) => {
-            if (this.getPermissions(Permission.NetworkAccess)) {
-                return fetch(input,init)
-            }
-        }
-        w.proc = this
-        w.key = this.#key
+        sandbox.overrideEnv({
+            fetch: async (input: RequestInfo, init?: RequestInit) => {
+                if (this.getPermissions(Permission.NetworkAccess)) {
+                    return await fetch(input, init)
+                }
+                return new Response(undefined,{status:403})
+            },
+            prockey: this.#key,
+        } as any);
+        console.log(this.#os)
     }
 
     getKey(): ProcessKey | undefined {
-        this.getKey = () => {return undefined}
+        this.getKey = () => { return undefined }
         return this.#key
     }
 
-    parentData(p:OS_Process | OS) {
+    parentData(p: OS_Process | OS) {
         if (p === this.#parent || p == this.#os) {
             return {
                 scriptenv: this.#scriptenv,
@@ -377,21 +351,22 @@ class OS_Process {
     }
 
     getPermissions(type: number): boolean {
-        return ((this.#os.getPermissions(this) || 0) & (1 << type)) !== 0; // Return true if the privilege is granted
+        return ((this.#os.getPermissions(this.#key) || 0) & (1 << type)) !== 0; // Return true if the privilege is granted
     }
 
     getPermissionsAll(): number {
-        return (this.#os.getPermissions(this)||0)+0; // Deref
+        return (this.#os.getPermissions(this.#key) || 0) + 0; // Deref
     }
 
-    async askPermissions(type: number, reason:string): Promise<boolean> {
-        await this.#os.requestPermissions(this.#key, (1 << type),reason); // Request permissions from the OS
+    async askPermissions(type: number, reason: string): Promise<boolean> {
+        if (this.getPermissions(type)) {return true}
+        await this.#os.requestPermissions(this.#key, (type), reason); // Request permissions from the OS
         return this.getPermissions(type);
     }
 
-    createChildProcess(name: string,code: string) {
-        if (this.getPermissions(0)) { // Check for create child process permission
-            let child = this.#os.createProcess(this, name, code);
+    async createChildProcess(name: string, code: string) {
+        if (this.getPermissions(1)) { // Check for create child process permission
+            let child = await this.#os.createProcess(this.#key, name, code) as OS_Process;
             this.children.push(child);
             return child;
         }
@@ -399,7 +374,7 @@ class OS_Process {
 
     kill(): void {
         this.#os.killProcess(this);
-        throw new OSError("",OSErrorCode.ProcessKilled)
+        throw new OSError("", OSErrorCode.ProcessKilled)
     }
 
     getParent(): OS_Process | null {
@@ -407,132 +382,24 @@ class OS_Process {
     }
 }
 
-class OS_Window {
-    #x: number;
-    #y: number;
-    #width: number;
-    #height: number;
-    #name: string;
-    #isDragging: boolean;
-    #isResizing: boolean;
-    #os: OS;
-    #body: Document;
-    #parent: OS_Process | null;
-    #draggingOffset: { x: number; y: number };
-    children: OS_Window[] = [];
-    constructor(x: number, y: number, width: number, height: number, name: string, os: any, parent: OS_Process | null = null, doc:Document) {
-        this.#x = x;
-        this.#y = y;
-        this.#width = width;
-        this.#height = height;
-        this.#name = name;
-        this.#isDragging = false;
-        this.#isResizing = false;
-        this.#draggingOffset = { x: 0, y: 0 };
-        this.#parent = parent;
-        this.#os = os; // Reference to the OS instance
-        this.#body = doc;
-
-        this.#focus();
-    }
-
-    parentData(p:OS_Process | OS) {
-        if (p === this.#parent || p === this.#os) {
-            return {
-                body: this.#body
-            }
-        }
-    }
-
-    #getBody(): Document {
-        return this.#body;
-    }
-
-    addHtml(html: HTMLElement): void {
-        const body = this.#getBody();
-        if (body) {
-            body.body.appendChild(html);
-        }
-    }
-
-    getPermissionsAll(): number {
-        return (this.#os.getPermissions(this) as number)+0
-    }
-
-    getPermissions(type: number): boolean {
-        return ((this.#os.getPermissions(this) as number) & (1 << type)) !== 0; // Return true if the privilege is granted
-    }
-
-    async askPermissions(type: number, reason:string): Promise<boolean> {
-        await this.#os.requestPermissions(this, (1 << type), reason); // Request permissions from the OS
-        return this.getPermissions(type);
-    }
-
-    setPosition(x: number, y: number): void {
-        if (this.getPermissions(2)) { // Check for position permission
-            this.#x = x;
-            this.#y = y;
-            this.#os.updatePosition(this,this.#x,this.#y)
-        } else {
-            console.warn("Permission denied: Cannot set position");
-        }
-    }
-
-    setSize(width: number, height: number): void {
-        if (this.getPermissions(3)) { // Check for size permission
-            this.#width = width;
-            this.#height = height;
-            this.#os.updateSize(this,this.#width,this.#height)
-        } else {
-            console.warn("Permission denied: Cannot set size");
-        }
-    }
-
-    createChildWindow(x: number, y: number, width: number, height: number, name: string): OS_Window | null {
-        if (this.getPermissions(0) && this.getPermissions(1)) { // Check for create child window permissions (process and window)
-            let child = this.#os.createWindow(this.#parent as OS_Process, x, y, width, height, name);
-            if (!child) {
-                console.warn("Failed to create child window");
-                return null;
-            }
-            this.children.push(child);
-            return child;
-        } else {
-            console.warn("Permission denied: Cannot create child window");
-            return null;
-        }
-    }
-
-    close(): void {
-        this.#os.closeWindow(this);
-    }
-
-    #focus(): void {
-        this.#os.getDesktop().focusWindow(this);
-    }
-
-    focus(): void {
-        if (this.getPermissions(4)) { // Check for force focus permission
-            this.#focus();
-        } else {
-            console.warn("Permission denied: Cannot focus window");
-        }
-    }
+interface IPCWrapper {
+    recv: () => any | undefined,
+    send: (data: any) => void
 }
 
 class IPC {
-    #queueA:Array<any>=[];
-    #queueB:Array<any>=[];
+    #queueA: Array<any> = [];
+    #queueB: Array<any> = [];
     a_wrapper() {
-        let send = (data:any) => {this.#queueB.push(data)}
-        let recv = () => {return this.#queueA.shift()}
-        return {send,recv}
+        let send = (data: any) => { this.#queueB.push(data) }
+        let recv = () => { return this.#queueA.shift() }
+        return { send, recv }
     }
     b_wrapper() {
-        let send = (data:any) => {this.#queueA.push(data)}
-        let recv = () => {return this.#queueB.shift()}
-        return {send,recv}
+        let send = (data: any) => { this.#queueA.push(data) }
+        let recv = () => { return this.#queueB.shift() }
+        return { send, recv }
     }
 }
 
-export {Permission,OSErrorCode,OSError,OS,FS,OS_Process,OS_Window, IPC}
+export { Permission, OSErrorCode, OSError, OS, FS, OS_Process, IPC, ProcessKey, IPCWrapper}

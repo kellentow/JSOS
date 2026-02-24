@@ -1,7 +1,7 @@
 {
-    "name":"Task Manager",
-    "appid":"task_manager",
-    "description":"A app that lets you see what is open.",
+    "name":"Glass",
+    "appid":"Glass",
+    "description":"The default dm for JSOS.",
     "version":"1.0.0",
     "author":"JSOS Dev",
     "license":"MPL 2.0",
