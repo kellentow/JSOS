@@ -7,6 +7,7 @@ Go to https://jsos.sleepyis.dev to see a version of it running
 
 ### Local
 git clone this repo
+run `./build.sh` in linux
 run `python3 main.py`
 go to http://localhost:5000
 
