@@ -10,12 +10,22 @@ function waitForNonNull(getValue: () => any | null, interval = 50) {
     });
 }
 
+enum FSPermission {
+    r = 4,
+    w = 2,
+    x = 1,
+    rw = 6,
+    wx = 3,
+    rx = 5,
+    rwx = 7
+}
+
 enum Permission {
-    CreateProcess = 1<<0,
-    UseFilesystem = 1<<1,
-    NetworkAccess = 1<<2,
-    ExecuteCode =   1<<3,
-    EditDom =       1<<4,
+    CreateProcess = 1 << 0,
+    UseFilesystem = 1 << 1,
+    NetworkAccess = 1 << 2,
+    ExecuteCode = 1 << 3,
+    EditDom = 1 << 4,
 }
 
 enum OSErrorCode {
@@ -38,23 +48,38 @@ class OS { // NOT FINISHED
     #processes: OS_Process[] = [];
     #processKeys: Map<ProcessKey, OS_Process> = new Map();
 
-    #parents: Map<(OS_Process), (OS_Process)[]> = new Map();
-    #perms: Map<(OS_Process), number> = new Map();
+    #parents: Map<OS_Process, OS_Process[]> = new Map();
+    #procAs: Map<OS_Process, number> = new Map();
+    #perms: Map<OS_Process, number> = new Map();
     #scripts: Map<OS_Process, Sandbox> = new Map();
+    #fs: FS = FS.load()
 
     #lastPID: number = 0;
     #root_proc: OS_Process;
 
     constructor() {
-        this.#root_proc = new OS_Process("root", this, null, ({overrideEnv:(...args:any[])=>{}} as any as Sandbox))
+        this.#root_proc = new OS_Process("root", this, null, ({ overrideEnv: (...args: any[]) => { } } as any as Sandbox))
         this.#perms.set(this.#root_proc, 31)
         this.#processes.push(this.#root_proc)
-        this.#processKeys.set(this.#root_proc.getKey() as ProcessKey,this.#root_proc)
+        let getKey = this.#root_proc.getKey // preserve get key for whatever is creating the OS to run root calls
+        this.#processKeys.set(this.#root_proc.getKey() as ProcessKey, this.#root_proc)
+        this.#root_proc.getKey = getKey
         this.#parents.set(this.#root_proc, []);
+        this.#procAs.set(this.#root_proc, 0)
+        this.#fs.save()
     }
 
     getRootProc(): OS_Process {
         return this.#root_proc
+    }
+
+    // One time use, for the kernel aka the script constructing the OS
+    getKernelData(): { root: OS_Process, fs: FS } | undefined {
+        this.getKernelData = () => { return undefined }
+        return {
+            root: this.#root_proc,
+            fs: this.#fs
+        }
     }
 
     getNewPID() {
@@ -62,8 +87,8 @@ class OS { // NOT FINISHED
         return this.#lastPID
     }
 
-    async createProcess(parentKey: ProcessKey, name: string, script: string): Promise<OS_Process|undefined> {
-        if (!this.#processKeys.has(parentKey)) {return}
+    async createProcess(parentKey: ProcessKey, name: string, script: string): Promise<OS_Process | undefined> {
+        if (!this.#processKeys.has(parentKey)) { return }
 
         const sandbox = new Sandbox(script, name, {})
 
@@ -76,6 +101,7 @@ class OS { // NOT FINISHED
         let key = proc.getKey() as ProcessKey
 
         this.#processKeys.set(key, proc)
+        this.#procAs.set(proc, this.#procAs.get(parent) as number)
 
         sandbox.overrideEnv({
             os: this,
@@ -88,8 +114,9 @@ class OS { // NOT FINISHED
                     return undefined
                 }
             },
+            fs: ()=>{return this.#fs.createWrapper(()=>{return this.#procAs.get(proc) as number})},
             proc
-        });
+        } as any);
 
         this.#perms.set(proc, this.#perms.get(parent) as number)
 
@@ -134,20 +161,23 @@ class OS { // NOT FINISHED
         if (this.#processKeys.has(key)) {
             proc = this.#processKeys.get(key) as OS_Process;
         } else { return null }
-        let kp = this.killProcess;
-        function recursive(v: OS_Process) {
-            kp(v)
+        for (let child of this.#parents.get(proc) || []) {
+            this.killProcess(child.getKey() as any);
         }
-        this.#parents.get(proc)?.forEach(recursive)
+        this.#scripts.get(proc)?.destroy()
         this.#scripts.delete(proc)
+        this.#processKeys.delete(key)
+        this.#processes = this.#processes.filter((v) => v !== proc)
+        this.#parents.delete(proc)
+        this.#procAs.delete(proc)
     }
 
-    requestPermissions(key: ProcessKey, n: number, reason: string) {
+    requestPermissions(key: ProcessKey, n: Permission, reason: string) {
         let proc;
         if (this.#processKeys.has(key)) {
             proc = this.#processKeys.get(key) as OS_Process;
         } else { return null }
-        let permName = Permission[n]
+        let permName = Permission[Math.log2(n)]
         if (!permName || !this.#perms.has(proc)) {
             return
         }
@@ -157,29 +187,172 @@ class OS { // NOT FINISHED
             this.#perms.set(proc, perms | n);
         }
     }
+
+    isRoot(key: ProcessKey) {
+        let key_proc = this.#processKeys.get(key)
+        if (!key_proc) return false
+        //can we trust them? (is pid 0 or uid 0 aka root)
+        return key_proc == this.#root_proc || this.#procAs.get(key_proc) == 0
+    }
+
+    setProcUser(key: ProcessKey, target: OS_Process, user: number) {
+        if (this.isRoot(key)) {
+            this.#procAs.set(target, user) //ok change user
+        }
+    }
 } // NOT FINISHED
 
+type NodeType = "Node" | "File" | "Directory";
+
+class FSNode {
+    owner: number = 0
+    //group: number = 0
+    perms: number = 0o755
+    type: NodeType = "Node"
+    static registry: Record<string, typeof FSNode> = {}
+
+    static deserialize(data: Record<string, any>) {
+        const ctor = this.registry[data.type] ?? this
+        let node = new ctor()
+        if (typeof data.owner == "number") node.owner = data.owner
+        //if (typeof data.group == "number") node.group = data.group
+        if (typeof data.perms == "number") node.perms = data.perms
+        if (typeof data.type == "string") node.type = data.type as NodeType
+        return node
+    }
+
+    serialize(): Record<string, any> {
+        return {
+            owner: this.owner,
+            //group: this.group,
+            perms: this.perms,
+            type: this.type,
+        }
+    }
+}
+
+class FSDir extends FSNode {
+    children: Record<string, FSNode> = {}
+    type: NodeType = "Directory"
+
+    static deserialize(data: Record<string, any>) {
+        let directory = super.deserialize(data) as FSDir
+        let children: Record<string, FSNode> = {}
+        Object.keys(data.children).forEach((key: string) => {
+            let child = data.children[key]
+            children[key] = (FSNode.registry[child.type] ?? FSNode).deserialize(child)
+        });
+        directory.children = children
+        return directory
+    }
+
+    serialize() {
+        let data = super.serialize()
+        let children: Record<string, any> = {}
+        Object.keys(this.children).forEach(key => {
+            let child = this.children[key]
+            children[key] = child.serialize()
+        });
+        data.children = children
+        return data
+    }
+}
+
+class FSFile extends FSNode {
+    type: NodeType = "File"
+    contents: Uint8Array = new Uint8Array()
+
+    static deserialize(data: Record<string, any>) {
+        let file = super.deserialize(data) as FSFile
+        if (typeof data.contents === "string") {
+            const binary = atob(data.contents);
+            const len = binary.length;
+            const bytes = new Uint8Array(len);
+
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+
+            file.contents = bytes
+        }
+        return file
+    }
+
+    serialize() {
+        let data = super.serialize()
+        let binary = ""
+        this.contents.forEach(byte => {
+            binary += String.fromCharCode(byte)
+        })
+        data.contents = btoa(binary)
+        return data
+    }
+}
+
+FSNode.registry = {
+    Node: FSNode,
+    Directory: FSDir,
+    File: FSFile
+}
+
+class FSFD {
+    #file: FSFile
+    #ptr: number = 0
+    #perms: number = 0o0
+    constructor(file: FSFile, perms: number) {
+        this.#file = file
+        this.#perms = perms
+    }
+
+    read() {
+        if ((this.#perms & FSPermission.r) == 0) return null
+        if (this.#ptr >= this.#file.contents.length) return null
+        return this.#file.contents[this.#ptr++]
+    }
+
+    write(byte: number) {
+        if ((this.#perms & FSPermission.w) == 0) return
+        if (this.#ptr >= this.#file.contents.length) {
+            const newBuf = new Uint8Array(this.#ptr + 1)
+            newBuf.set(this.#file.contents)
+            this.#file.contents = newBuf
+        }
+        return this.#file.contents[this.#ptr++] = byte & 0xFF
+    }
+
+    seek(position: number) {
+        if (position < 0) position = 0
+        this.#ptr = position
+    }
+}
+
+interface FSWrapper {
+    touch: (path:string)=>boolean;
+    mkdir: (path:string)=>boolean;
+    open: (path:string)=>FSFD | undefined
+}
+
 class FS {
-    files: Record<string, any>;
-    _saveTimeout: number | null;
+    #files: FSDir;
     constructor() {
-        this.files = { "apps": {} }
-        this._saveTimeout = null;
+        this.#files = new FSDir()
+        setInterval(() => { this.save() }, 30 * 1000)
     }
 
     save() {
         try {
-            localStorage.setItem("fs", JSON.stringify(this.files));
+            localStorage.setItem("fs", JSON.stringify(this.#files.serialize()));
         } catch (error) {
             console.error("Failed to save to localStorage:", error);
         }
     }
 
-    static load(data: any) {
+    static load() {
         const fs = new FS();
+        const data = localStorage.getItem("fs")
         try {
             if (data) {
-                fs.files = JSON.parse(data);
+                fs.#files = FSDir.deserialize(JSON.parse(data));
             }
         } catch (error) {
             console.error("Failed to load from localStorage:", error);
@@ -187,49 +360,108 @@ class FS {
         return fs;
     }
 
-    write(path: string, data: any) {
-        let path_arr = path.split("/")
-        let folder = this.files
-        for (let i = 0; i < path_arr.length - 1; i++) {
-            if (!folder[path_arr[i]]) {
-                folder[path_arr[i]] = {}
+    parse_path(path: string) {
+        let parts = path.split("/")
+        let new_path: string[] = []
+        for (let i = 0; i < parts.length; i++) {
+            let part = parts[i]
+            if (part == "") { if (i != parts.length - 1) new_path = [] } // ex /home/user// == /
+            else if (part == "..") { new_path.pop() } // ex /home/user/../ == /home/
+            else if (part == ".") { } else { // ex /home/user/./ == /home/user/
+                new_path.push(part)
             }
-            folder = folder[path_arr[i]]
         }
-        folder[path_arr[path_arr.length - 1]] = data
+        return new_path
+    }
 
-        if (this._saveTimeout) { clearTimeout(this._saveTimeout) };
-        this._saveTimeout = setTimeout(() => {
-            this.save();
-        }, 250) as unknown as number; // Save after 250ms of not writing
+    getNode(path: string): FSNode | undefined {
+        let path_arr = this.parse_path(path)
+        let node: FSNode = this.#files
+        for (let i = 0; i < path_arr.length; i++) {
+            if (node.type !== "Directory" || !(node instanceof FSDir)) return
+            if (!node.children[path_arr[i]]) {
+                return undefined
+            }
+            node = node.children[path_arr[i]]
+        }
+        return node
+    }
+
+    dirname(path:string) {
+        const parts = this.parse_path(path).slice(0,-1)
+        return parts.length ? "/" + parts.join("/") : "/"
     }
 
     path_exists(path: string) {
-        let path_arr = path.split("/")
-        let folder = this.files
-        for (let i = 0; i < path_arr.length; i++) {
-            if (!folder[path_arr[i]]) {
-                return false
-            }
-            folder = folder[path_arr[i]]
-        }
+        return this.getNode(path) !== undefined
+    }
+
+    mkdir(path: string) {
+        let path_arr = this.parse_path(path)
+        let parent_path = path_arr.slice(0, -1).join("/")
+        let parent = this.getNode(parent_path) as FSDir
+        if (!parent || parent.type !== "Directory") return false
+        let last = path_arr[path_arr.length - 1]
+        if (parent.children[last]) return false
+        parent.children[last] = new FSDir()
         return true
     }
 
-    read(path: string) {
-        if (path === "") {
-            return this.files
+    touch(path: string) {
+        let path_arr = this.parse_path(path)
+        let parent_path = path_arr.slice(0, -1).join("/")
+        let parent = this.getNode(parent_path) as FSDir
+        if (!parent || parent.type !== "Directory") return false
+        let last = path_arr[path_arr.length - 1]
+        if (parent.children[last]) return false
+        parent.children[last] = new FSFile()
+        return true
+    }
+
+    getFD(path: string, perms: number = 0o0) {
+        let file = this.getNode(path) as FSFile
+        if (!file || file.type !== "File") return
+
+        return new FSFD(file, perms)
+    }
+
+    getUserPerms(path: string, uid: number) {
+        if (!this.path_exists(path)) return
+        let parts = this.parse_path(path)
+        let perm = 0o0
+
+        let node: FSNode = this.#files
+        for (let i = 0; i < parts.length; i++) {
+            perm = node.owner == uid ? (node.perms & 0o700) >> 6 : node.perms & 0o7
+            if ((perm & FSPermission.x) == 0) return
+            node = (node as FSDir).children[parts[i]]
         }
-        const pathParts = path.split("/");
-        let folder = this.files;
-        for (let i = 0; i < pathParts.length; i++) {
-            if (!folder[pathParts[i]]) {
-                console.warn("File not found: " + pathParts.join("/"));
-                return null;
+        perm = node.owner == uid ? (node.perms & 0o700) >> 6 : node.perms & 0o7
+        return perm
+    }
+
+    createWrapper(uid_solver: ()=>number):FSWrapper {
+        return {
+            mkdir: (path: string) => {
+                let perm = this.getUserPerms(this.dirname(path),uid_solver())
+                if (perm !== undefined && perm & FSPermission.w) {
+                    return this.mkdir(path)
+                }
+                return false
+            },
+            touch: (path: string) => {
+                let perm = this.getUserPerms(this.dirname(path),uid_solver())
+                if (perm !== undefined && perm & FSPermission.w) {
+                    return this.touch(path)
+                }
+                return false
+            },
+            open: (path: string) => {
+                let perm = this.getUserPerms(path,uid_solver())
+                if (perm === undefined) return
+                return this.getFD(path, perm)
             }
-            folder = folder[pathParts[i]];
         }
-        return folder;
     }
 }
 
@@ -239,7 +471,7 @@ class Sandbox {
     constructor(script: string, name?: string, override?: Partial<Window>) {
         this.#name = name || "UNKNOWN"
         this.#element = document.createElement("iframe");
-        this.#element.setAttribute("sandbox", "allow-scripts allow-same-origin"); 
+        this.#element.setAttribute("sandbox", "allow-scripts allow-same-origin");
         this.#element.style.width = "0px";
         this.#element.style.height = "0px";
         this.#element.style.border = "none";
@@ -258,10 +490,7 @@ class Sandbox {
         this.overrideEnv({
             alert: dummy(),
             confirm: dummy(),
-            prompt: dummy(), // @ts-ignore
-            cookieStore: {}, // @ts-ignore
-            indexedDB: {},   // @ts-ignore
-            document: {},
+            prompt: dummy(), //@ts-ignore
             console: windowConsole,
             ...override
         })
@@ -276,13 +505,13 @@ class Sandbox {
         const w = this.env();
         if (w) {
             for (let key in override) {
-                    try {
-                        // @ts-ignore
-                        w[key] = override[key];
-                    } catch {
-                        console.error(`[Sandbox Manager] Failed to overwrite ${key} on ${this.#name}`)
-                    }
+                try {
+                    // @ts-ignore
+                    w[key] = override[key];
+                } catch {
+                    console.error(`[Sandbox Manager] Failed to overwrite ${key} on ${this.#name}`)
                 }
+            }
         } else {
             this.#element.addEventListener("load", () => this.overrideEnv(override), { once: true });
         }
@@ -291,7 +520,7 @@ class Sandbox {
     load() {
         const event = new CustomEvent("os-load");
         console.log(`[Sandbox Manager] Loading ${this.#name}`);
-        ( this.env() as Window).document.dispatchEvent(event);
+        (this.env() as Window).document.dispatchEvent(event);
     }
 
     destroy() {
@@ -320,11 +549,10 @@ class OS_Process {
                 if (this.getPermissions(Permission.NetworkAccess)) {
                     return await fetch(input, init)
                 }
-                return new Response(undefined,{status:403})
+                return new Response(undefined, { status: 403 })
             },
             prockey: this.#key,
         } as any);
-        console.log(this.#os)
     }
 
     getKey(): ProcessKey | undefined {
@@ -359,22 +587,24 @@ class OS_Process {
     }
 
     async askPermissions(type: number, reason: string): Promise<boolean> {
-        if (this.getPermissions(type)) {return true}
+        if (this.getPermissions(type)) { return true }
         await this.#os.requestPermissions(this.#key, (type), reason); // Request permissions from the OS
         return this.getPermissions(type);
     }
 
-    async createChildProcess(name: string, code: string) {
-        if (this.getPermissions(1)) { // Check for create child process permission
+    async createChildProcess(key:ProcessKey, name: string, code: string) {
+        if (key !== this.#key) return
+        if (this.getPermissions(Permission.CreateProcess)) { // Check for create child process permission
             let child = await this.#os.createProcess(this.#key, name, code) as OS_Process;
             this.children.push(child);
             return child;
         }
     }
 
-    kill(): void {
-        this.#os.killProcess(this);
-        throw new OSError("", OSErrorCode.ProcessKilled)
+    kill(key: ProcessKey): void {
+        if (this.#key == key || this.#os.isRoot(key)) {
+            this.#os.killProcess(this.#key);
+        }
     }
 
     getParent(): OS_Process | null {
@@ -390,16 +620,16 @@ interface IPCWrapper {
 class IPC {
     #queueA: Array<any> = [];
     #queueB: Array<any> = [];
-    a_wrapper() {
+    a_wrapper(): IPCWrapper {
         let send = (data: any) => { this.#queueB.push(data) }
         let recv = () => { return this.#queueA.shift() }
         return { send, recv }
     }
-    b_wrapper() {
+    b_wrapper(): IPCWrapper {
         let send = (data: any) => { this.#queueA.push(data) }
         let recv = () => { return this.#queueB.shift() }
         return { send, recv }
     }
 }
 
-export { Permission, OSErrorCode, OSError, OS, FS, OS_Process, IPC, ProcessKey, IPCWrapper}
+export { Permission, OSErrorCode, OSError, OS, FS, OS_Process, IPC, ProcessKey, IPCWrapper, FSPermission, FSWrapper}

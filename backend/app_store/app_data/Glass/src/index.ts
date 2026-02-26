@@ -16,7 +16,7 @@ interface GlassWindow {
     width: number;
     height: number;
     z: number;
-    ipc: IPCWrapper;
+    id: string;
 }
 
 function waitForDefined(getValue: () => any, interval = 50, timeout?: number): Promise<any> {
@@ -55,7 +55,7 @@ function waitForDefined(getValue: () => any, interval = 50, timeout?: number): P
 }
 
 let windows: GlassWindow[] = [];
-let windowsByIPC = new Map<IPCWrapper, GlassWindow>();
+let ipcs: IPCWrapper[] = [];
 let pdoc: Document | undefined = undefined;
 
 // process up to N messages from one IPC per frame to avoid starvation
@@ -84,7 +84,9 @@ function importOrParseElement(nodeLike: any): Node | null {
     return null;
 }
 
-function IPCHandler(ipc: IPCWrapper, win: GlassWindow) {
+function IPCHandler(ipc: IPCWrapper) {
+    if (!pdoc) throw new Error("User refused DOM access");
+    pdoc = pdoc as any as Document
     let processed = 0;
     while (processed < MAX_MSGS_PER_IPC) {
         let msg: any;
@@ -100,51 +102,58 @@ function IPCHandler(ipc: IPCWrapper, win: GlassWindow) {
 
         try {
             if (msg.type === "pos") {
+                let win:GlassWindow = windows.find((v)=>{return v.id == msg.target}) as GlassWindow
+                if (!win) continue
                 if (typeof msg.x === "number") win.x = msg.x;
                 if (typeof msg.y === "number") win.y = msg.y;
+                if (msg.z && typeof msg.z === "number") win.z = msg.z
             } else if (msg.type === "size") {
+                let win:GlassWindow = windows.find((v)=>{return v.id == msg.target}) as GlassWindow
+                if (!win) continue
                 if (typeof msg.width === "number") win.width = msg.width;
                 if (typeof msg.height === "number") win.height = msg.height;
-            } else if (msg.type === "element") {
-                const node = importOrParseElement(msg.element);
-                if (!node) {
-                    console.warn("Failed to import/parse element message", msg.element);
-                    continue;
-                }
+            } else if (msg.type === "new") {
+                let win = pdoc.createElement("iframe")
+                let id = crypto.randomUUID()
+                win.style.borderWidth = "0px"
+                win.srcdoc = ""
+                win.sandbox = "allow-same-origin"
+                windows.push({
+                    x:0,
+                    y:0,
+                    z:0,
+                    width:0,
+                    height:0,
+                    element:win,
+                    id
+                })
 
-                if (win.element.parentNode) {
-                    try {
-                        win.element.replaceWith(node as Node);
-                    } catch (e) {
-                        win.element.parentNode.removeChild(win.element);
-                        pdoc!.body.appendChild(node as Node);
-                    }
-                } else {
-                    pdoc!.body.appendChild(node as Node);
-                }
-
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    win.element = node as HTMLElement;
-                } else {
-                    const wrapper = pdoc!.createElement("div");
-                    wrapper.appendChild(node);
-                    win.element = wrapper;
-                }
+                pdoc.body.appendChild(win)
+                win.addEventListener("load", () => {
+                    console.log("New window made", win)
+                    ipc.send({type:"new",document:win.contentDocument,id})
+                })
             } else if (msg.type == "info") {
-                if (!pdoc) throw new Error("User refused DOM access");
-                pdoc = pdoc as any as Document
+                let windows_safe:{x:number,y:number,z:number,width:number,height:number,id:string}[] = []
+                windows.forEach((window:GlassWindow)=>{
+                    windows_safe.push({
+                        x:window.x,
+                        y:window.y,
+                        z:window.z,
+                        width:window.width,
+                        height:window.height,
+                        id:window.id
+                    })
+                })
                 ipc.send({
                     type:"info",
-                    width: win.width,
-                    height: win.height,
-                    x: win.x,
-                    y: win.y,
                     sc: {
                         x:0,
                         y:0,
                         width:pdoc.documentElement.clientWidth,
                         height:pdoc.documentElement.clientHeight
-                    }
+                    },
+                    windows:windows_safe
                 })
             } else {
                 console.warn("Unknown IPC message type:", msg.type);
@@ -162,29 +171,19 @@ function IPCHandler(ipc: IPCWrapper, win: GlassWindow) {
 document.addEventListener("os-load", async () => {
     try {
         await waitForDefined(() => (window as any).proc, 50, 1000);
-        await (window as any).proc.askPermissions(8, "Permission to edit the DOM is required to show windows");
         pdoc = (window as any).parent_doc();
+        if (!pdoc) {
+            // perm 16 == EditDom
+            await (window as any).proc.askPermissions(16, "Permission to edit the DOM is required to show windows");
+            pdoc = (window as any).parent_doc();
+        }
         if (!pdoc) throw new Error("User refused DOM access");
         pdoc = pdoc as any as Document
+        pdoc.body.style.overflow = "clip"
+        pdoc.body.style.margin = "0px"
+        pdoc.documentElement.style.overflow = "clip"
         requestAnimationFrame(updateLoop);
         console.log("Glass is (probably) up!");
-
-        ;((Gwindow:GlassWindow)=>{
-            windows.push(Gwindow);
-            pdoc.body.appendChild(Gwindow.element);
-            Gwindow.element.textContent = "Glass is online!"
-            Gwindow.element.style.borderWidth = "3px"
-            Gwindow.element.style.borderColor = "black"
-            Gwindow.element.style.borderStyle = "solid"
-        })({
-            x:20,
-            y:20,
-            width:100,
-            height:100,
-            z:0,
-            element: (pdoc as any as Document).createElement("div"),
-            ipc: {send:(...a)=>{},recv:()=>{}}
-        });
     } catch (err) {
         console.error("Failed to initialize Glass:", err);
     }
@@ -194,46 +193,17 @@ function updateLoop() {
     const IPCs = window.IPCs ?? [];
 
     IPCs.forEach((ipc) => {
-        if (!windowsByIPC.has(ipc)) {
-            if (!pdoc) return;
-            const el = pdoc.createElement("div");
-            el.style.position = "absolute";
-            pdoc.body.appendChild(el);
-            const newWindow: GlassWindow = {
-                element: el,
-                x: 0,
-                y: 0,
-                width: 100,
-                height: 100,
-                z: windows.length,
-                ipc,
-            };
-            windows.push(newWindow);
-            windowsByIPC.set(ipc, newWindow);
-            IPCHandler(ipc, newWindow);
-        } else {
-            IPCHandler(ipc, windowsByIPC.get(ipc)!);
-        }
+        IPCHandler(ipc);
     });
 
-    const currentSet = new Set(IPCs);
-    for (const [ipc, win] of windowsByIPC.entries()) {
-        if (!currentSet.has(ipc)) {
-            if (win.element.parentNode) win.element.parentNode.removeChild(win.element);
-            windowsByIPC.delete(ipc);
-            const idx = windows.indexOf(win);
-            if (idx >= 0) windows.splice(idx, 1);
-        }
-    }
-
     windows.forEach((win, i) => {
-        win.z = i;
         const el = win.element;
         el.style.position = "absolute";
         if (win.x+"px" != el.style.left)        el.style.left = `${win.x}px`;
         if (win.y+"px" != el.style.top)         el.style.top = `${win.y}px`;
         if (win.width+"px" != el.style.width)   el.style.width = `${win.width}px`;
         if (win.height+"px" != el.style.height) el.style.height = `${win.height}px`;
+        el.style.overflow = "clip"
         el.style.zIndex = String(win.z);
     });
 

@@ -17,9 +17,14 @@ for d in "$SCRIPT_DIR"/*/ ; do
     echo "Compiling app: $DIR_NAME"
     pushd $DIR_NAME > /dev/null
 
-    esbuild ./src/index.ts --outdir="../tmp_build/" --minify
+    esbuild ./src/index.ts --outdir="../tmp_build/"
     if [ $? -ne 0 ]; then
         echo "Build failed for $DIR_NAME (esbuild error)"
+        exit 1
+    fi
+    rsync -av --exclude='*.ts' --exclude='*.js' ./src/ ../tmp_build/
+    if [ $? -ne 0 ]; then
+        echo "Build failed for $DIR_NAME (static clone error)"
         exit 1
     fi
 

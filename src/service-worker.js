@@ -15,12 +15,12 @@ self.addEventListener('fetch', (event) => {
       if (cached) {
         return cached;
       }
-      return fetch(event.request).then((response) => {
+      return fetch(event.request)/*.then((response) => {
         if (event.request.method === 'GET' && response.status === 200) {
           caches.open(cacheName).then((cache) => cache.put(event.request, response.clone()));
         }
         return response;
-      });
+      });*/
     }).catch(() => {
       return new Response('Offline', { status: 503 });
     })

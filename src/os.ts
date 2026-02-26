@@ -1,32 +1,85 @@
-import { OS, OS_Process } from './os-classes.js'
+import { OS, OS_Process, ProcessKey, FS, FSPermission } from './os-classes.js'
 // @ts-ignore
 import { unzip } from 'https://unpkg.com/unzipit@1.4.2/dist/unzipit.module.js';
 
 let os = new OS()
-let root_proc = os.getRootProc() as OS_Process
+let { root, fs } = os.getKernelData() as any as { root: OS_Process, fs: FS }
+let root_key = root.getKey() as ProcessKey
 
-let canvas: HTMLCanvasElement = document.getElementById("viewport") as any as HTMLCanvasElement
-let ctx = canvas?.getContext("2d")
+// @ts-ignore
+window.os = os
+// @ts-ignore
+window.root_key = root_key
 
-ctx?.strokeText("Please wait", 1, 1)
+if (!fs.path_exists("/apps")) {
+    fs.mkdir("/apps")
+}
 
-async function run_app(name:string,procname:string) {
-    const resp = await fetch("/backend/app_store/download/"+name);
-    const arrayBuffer = await resp.arrayBuffer();
-
-    // unzip the file
-    const { entries } = await unzip(arrayBuffer);
-    const mainEntry = entries["index.js"];
-    let app_code: string | undefined;
-    if (mainEntry) {
-        const blob = await mainEntry.blob(); // or use .text() for direct string
-        app_code = await blob.text();
-        await root_proc.createChildProcess(procname, app_code as string)
-    } else {
-        console.error(entries)
-        throw new Error("Failed to get "+name)
+function writeFile(path: string, contents: Uint8Array) {
+    let fd = fs.getFD(path, FSPermission.w)
+    if (fd === undefined) { throw Error(`Could not get FD: -w- ${path}`) }
+    for (let i = 0; i < contents.length; i++) {
+        fd.write(contents[i])
     }
 }
 
-await run_app("Glass","Glass")
-await run_app("Glasstop","Glasstop")
+function readFile(path: string): Uint8Array {
+    let fd = fs.getFD(path, FSPermission.r);
+    if (fd === undefined) throw Error(`Could not get FD: r-- ${path}`);
+
+    const bytes: number[] = [];
+    let out = fd.read();
+    while (out != null) {
+        bytes.push(out);
+        out = fd.read();
+    }
+    return new Uint8Array(bytes);
+}
+
+async function extract_zip(path: string, zip: ArrayBuffer) {
+    const { entries } = (await unzip(zip)) as { entries: Record<string, { isDirectory: boolean, name: string, arrayBuffer: () => ArrayBuffer }> };
+
+    for (const entry of Object.values(entries)) {
+        if (entry.isDirectory) continue;
+
+        const parts = entry.name.split("/");
+        const folders = parts.slice(0, -1);
+        const filename = parts[parts.length - 1];
+
+        let cwd = path;
+
+        // Create folders
+        for (const folder of folders) {
+            cwd += "/" + folder;
+            await fs.mkdir(cwd);
+        }
+
+        const fullPath = cwd + "/" + filename;
+
+        await fs.touch(fullPath);
+        await writeFile(
+            fullPath,
+            new Uint8Array(await entry.arrayBuffer())
+        );
+    }
+}
+
+async function run_app(path: string, name: string, uid: number) {
+    if (!fs.path_exists(path)) {
+        fs.mkdir(path)
+        const resp = await fetch("/backend/app_store/download/" + name);
+        const arrayBuffer = await resp.arrayBuffer();
+
+        // unzip the file
+        await extract_zip(path, arrayBuffer)
+    }
+    let app_code = new TextDecoder().decode(readFile(path + "/index.js"));
+    let proc = await root.createChildProcess(root_key, name, app_code as string)
+    if (proc) {
+        os.setProcUser(root_key, proc, uid)
+    }
+}
+
+// USER IS uid 1000
+await run_app("/apps/glass", "Glass", 1)
+await run_app("/apps/glasstop", "Glasstop", 2)

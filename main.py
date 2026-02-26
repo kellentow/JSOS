@@ -64,4 +64,3 @@ def send_backend(full_path):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
-# This is a simple Flask application that serves static files and dynamically loads backend modules based on the request path.

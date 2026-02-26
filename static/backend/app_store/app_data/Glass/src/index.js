@@ -35,7 +35,7 @@ function waitForDefined(getValue, interval = 50, timeout) {
     });
 }
 let windows = [];
-let windowsByIPC = new Map();
+let ipcs = [];
 let pdoc = undefined;
 // process up to N messages from one IPC per frame to avoid starvation
 const MAX_MSGS_PER_IPC = 100;
@@ -64,7 +64,10 @@ function importOrParseElement(nodeLike) {
     }
     return null;
 }
-function IPCHandler(ipc, win) {
+function IPCHandler(ipc) {
+    if (!pdoc)
+        throw new Error("User refused DOM access");
+    pdoc = pdoc;
     let processed = 0;
     while (processed < MAX_MSGS_PER_IPC) {
         let msg;
@@ -80,60 +83,67 @@ function IPCHandler(ipc, win) {
         processed++;
         try {
             if (msg.type === "pos") {
+                let win = windows.find((v) => { return v.id == msg.target; });
+                if (!win)
+                    continue;
                 if (typeof msg.x === "number")
                     win.x = msg.x;
                 if (typeof msg.y === "number")
                     win.y = msg.y;
+                if (msg.z && typeof msg.z === "number")
+                    win.z = msg.z;
             }
             else if (msg.type === "size") {
+                let win = windows.find((v) => { return v.id == msg.target; });
+                if (!win)
+                    continue;
                 if (typeof msg.width === "number")
                     win.width = msg.width;
                 if (typeof msg.height === "number")
                     win.height = msg.height;
             }
-            else if (msg.type === "element") {
-                const node = importOrParseElement(msg.element);
-                if (!node) {
-                    console.warn("Failed to import/parse element message", msg.element);
-                    continue;
-                }
-                if (win.element.parentNode) {
-                    try {
-                        win.element.replaceWith(node);
-                    }
-                    catch (e) {
-                        win.element.parentNode.removeChild(win.element);
-                        pdoc.body.appendChild(node);
-                    }
-                }
-                else {
-                    pdoc.body.appendChild(node);
-                }
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    win.element = node;
-                }
-                else {
-                    const wrapper = pdoc.createElement("div");
-                    wrapper.appendChild(node);
-                    win.element = wrapper;
-                }
+            else if (msg.type === "new") {
+                let win = pdoc.createElement("iframe");
+                let id = crypto.randomUUID();
+                win.style.borderWidth = "0px";
+                win.srcdoc = "";
+                win.sandbox = "allow-same-origin";
+                windows.push({
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                    width: 0,
+                    height: 0,
+                    element: win,
+                    id
+                });
+                pdoc.body.appendChild(win);
+                win.addEventListener("load", () => {
+                    console.log("New window made", win);
+                    ipc.send({ type: "new", document: win.contentDocument, id });
+                });
             }
             else if (msg.type == "info") {
-                if (!pdoc)
-                    throw new Error("User refused DOM access");
-                pdoc = pdoc;
+                let windows_safe = [];
+                windows.forEach((window) => {
+                    windows_safe.push({
+                        x: window.x,
+                        y: window.y,
+                        z: window.z,
+                        width: window.width,
+                        height: window.height,
+                        id: window.id
+                    });
+                });
                 ipc.send({
                     type: "info",
-                    width: win.width,
-                    height: win.height,
-                    x: win.x,
-                    y: win.y,
                     sc: {
                         x: 0,
                         y: 0,
                         width: pdoc.documentElement.clientWidth,
                         height: pdoc.documentElement.clientHeight
-                    }
+                    },
+                    windows: windows_safe
                 });
             }
             else {
@@ -151,30 +161,20 @@ function IPCHandler(ipc, win) {
 document.addEventListener("os-load", async () => {
     try {
         await waitForDefined(() => window.proc, 50, 1000);
-        await window.proc.askPermissions(8, "Permission to edit the DOM is required to show windows");
         pdoc = window.parent_doc();
+        if (!pdoc) {
+            // perm 16 == EditDom
+            await window.proc.askPermissions(16, "Permission to edit the DOM is required to show windows");
+            pdoc = window.parent_doc();
+        }
         if (!pdoc)
             throw new Error("User refused DOM access");
         pdoc = pdoc;
+        pdoc.body.style.overflow = "clip";
+        pdoc.body.style.margin = "0px";
+        pdoc.documentElement.style.overflow = "clip";
         requestAnimationFrame(updateLoop);
         console.log("Glass is (probably) up!");
-        ;
-        ((Gwindow) => {
-            windows.push(Gwindow);
-            pdoc.body.appendChild(Gwindow.element);
-            Gwindow.element.textContent = "Glass is online!";
-            Gwindow.element.style.borderWidth = "3px";
-            Gwindow.element.style.borderColor = "black";
-            Gwindow.element.style.borderStyle = "solid";
-        })({
-            x: 20,
-            y: 20,
-            width: 100,
-            height: 100,
-            z: 0,
-            element: pdoc.createElement("div"),
-            ipc: { send: (...a) => { }, recv: () => { } }
-        });
     }
     catch (err) {
         console.error("Failed to initialize Glass:", err);
@@ -183,42 +183,9 @@ document.addEventListener("os-load", async () => {
 function updateLoop() {
     const IPCs = window.IPCs ?? [];
     IPCs.forEach((ipc) => {
-        if (!windowsByIPC.has(ipc)) {
-            if (!pdoc)
-                return;
-            const el = pdoc.createElement("div");
-            el.style.position = "absolute";
-            pdoc.body.appendChild(el);
-            const newWindow = {
-                element: el,
-                x: 0,
-                y: 0,
-                width: 100,
-                height: 100,
-                z: windows.length,
-                ipc,
-            };
-            windows.push(newWindow);
-            windowsByIPC.set(ipc, newWindow);
-            IPCHandler(ipc, newWindow);
-        }
-        else {
-            IPCHandler(ipc, windowsByIPC.get(ipc));
-        }
+        IPCHandler(ipc);
     });
-    const currentSet = new Set(IPCs);
-    for (const [ipc, win] of windowsByIPC.entries()) {
-        if (!currentSet.has(ipc)) {
-            if (win.element.parentNode)
-                win.element.parentNode.removeChild(win.element);
-            windowsByIPC.delete(ipc);
-            const idx = windows.indexOf(win);
-            if (idx >= 0)
-                windows.splice(idx, 1);
-        }
-    }
     windows.forEach((win, i) => {
-        win.z = i;
         const el = win.element;
         el.style.position = "absolute";
         if (win.x + "px" != el.style.left)
@@ -229,6 +196,7 @@ function updateLoop() {
             el.style.width = `${win.width}px`;
         if (win.height + "px" != el.style.height)
             el.style.height = `${win.height}px`;
+        el.style.overflow = "clip";
         el.style.zIndex = String(win.z);
     });
     requestAnimationFrame(updateLoop);
