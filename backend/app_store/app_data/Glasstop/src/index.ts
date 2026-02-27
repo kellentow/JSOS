@@ -1,17 +1,25 @@
 import { OS, OS_Process, FSFD } from "./../../../../../src/os-classes"
-import { GWindow } from "./../../../../../src/helpers"
+import { GWindow, waitForDefined } from "./../../../../../src/helpers"
 
 interface GlassInfo {
+    type: string,
     sc: { x: number, y: number, width: number, height: number },
     windows: { x: number, y: number, width: number, height: number, z: number, id: string }[]
 }
 
-let info: GlassInfo = { sc: { x: 0, y: 0, width: 0, height: 0 }, windows: [] }
+let info: GlassInfo = { type:"info", sc: { x: 0, y: 0, width: 0, height: 0 }, windows: [] }
 
-function update(Gwindow: GWindow) {
+async function update(Gwindow: GWindow) {
+    let ipc = window.IPCs[0]
+    ipc.send({type:"info"})
+    let out = {type:""}
+    while (out.type != "info") {
+        out = await waitForDefined(ipc.recv) 
+    }
+    info = out as any
     Gwindow.move(0, 0, 0)
     Gwindow.scale(info.sc.width, info.sc.height)
-    requestAnimationFrame(() => { update(Gwindow) })
+    requestAnimationFrame(async () => { await update(Gwindow) })
 }
 
 function readFile(fd: FSFD | undefined): Uint8Array {
