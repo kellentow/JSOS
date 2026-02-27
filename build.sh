@@ -1,5 +1,12 @@
 echo "Building kernel"
-tsc --project tsconfig.json
+#tsc --noEmit
+esbuild src/**/*.ts \
+  --outdir=dist \
+  --target=esnext \
+  --format=esm \
+  --platform=browser \
+  --sourcemap \
+  --loader:.ts=ts
 rm -rf static/**/
 mv dist/* static/
 

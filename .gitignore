@@ -1,6 +1,9 @@
 node_modules
 dist
 static/backend
-static/src/os.js
-static/src/os-classes.js
-static/src/helpers.js
+static/os.js
+static/os-classes.js
+static/helpers.js
+static/os.js.map
+static/os-classes.js.map
+static/helpers.js.map

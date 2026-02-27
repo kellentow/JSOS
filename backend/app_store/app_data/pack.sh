@@ -16,7 +16,7 @@ for d in "$SCRIPT_DIR"/*/ ; do
     
     echo "Compiling app: $DIR_NAME"
     pushd $DIR_NAME > /dev/null
-
+    
     esbuild ./src/index.ts --outdir="../tmp_build/" --log-level=warning --bundle
     if [ $? -ne 0 ]; then
         echo "Build failed for $DIR_NAME (esbuild error)"

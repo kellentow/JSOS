@@ -64,7 +64,7 @@ async function extract_zip(path: string, zip: ArrayBuffer) {
 }
 
 async function run_app(path: string, name: string, uid: number) {
-    if (!fs.path_exists(path)) {
+    if (!fs.path_exists(path) || !fs.path_exists(path+"/index.js")) {
         fs.mkdir(path)
         const resp = await fetch("/backend/app_store/download/" + name);
         const arrayBuffer = await resp.arrayBuffer();
@@ -80,9 +80,9 @@ async function run_app(path: string, name: string, uid: number) {
 }
 
 // USER IS uid 1000
-await run_app("/apps/glass", "Glass", 1)
-await run_app("/apps/glasstop", "Glasstop", 2)
+await run_app("/apps/Glass", "Glass", 1)
+await run_app("/apps/Glasstop", "Glasstop", 2)
 setTimeout(async () => {
-    await run_app("/apps/fileexplorer", "FileExplorer", 1000)
-    await run_app("/apps/taskmanager", "TaskManager", 0)
+    await run_app("/apps/FileExplorer", "FileExplorer", 1000)
+    await run_app("/apps/TaskManager", "TaskManager", 0)
 }, 3000)

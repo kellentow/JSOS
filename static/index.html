@@ -14,15 +14,30 @@
 </head>
 
 <body>
+    <p> If you see this, something went VERY wrong, click on this text to reset JSOS </p>
     <script>
+        document.body.children[0].onclick = () => {
+            localStorage.clear()
+            indexedDB.databases().then(async (dbs)=>{
+                dbs.forEach(db => {
+                    indexedDB.deleteDatabase(db.name)
+                });
+            })
+            cookieStore.getAll().then((cookies)=>{
+                cookies.forEach((cookie)=>{
+                    cookieStore.delete(cookie)
+                })
+            })
+            setTimeout(()=>{window.location.reload()},1000)
+        }
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js')
                 .then(() => console.log('Service Worker registered'))
                 .catch(err => console.error('Service Worker failed:', err));
         }
     </script>
-    <script type="module" src="/static/src/os-classes.js"></script>
-    <script type="module" src="/static/src/os.js"></script>
+    <script type="module" src="/static/os-classes.js"></script>
+    <script type="module" src="/static/os.js"></script>
 </body>
 
 </html>
