@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        .node:hover {
+            background-color: #3e3e3e;
+        }
+
+        body {
+            background-color: #282828;
+            color: #FFF;
+        }
+
+        .node {
+            position: relative;
+            background-color: #282828;
+            width: 100%;
+            white-space: pre;
+        }
+
+        .node button {
+            position: absolute;
+            right: 5px;
+            height: 1.5em;
+            border: 1px solid #1d1d1d;
+            border-radius: 0.2em;
+            background-color: #3a3a3a;
+            color: #fff;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        .node button:hover {
+            background-color: #505050;
+            transform: scale(1.05);
+        }
+
+        #top {
+            display: flex;
+            align-items: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="top">
+        <button id="reload">Reload</button>
+        <p id="pid"></p>
+    </div>
+    <div id="main" class="node"></div>
+</body>
+
+</html>

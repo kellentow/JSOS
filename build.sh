@@ -1,3 +1,4 @@
+echo "Building kernel"
 tsc --project tsconfig.json
 rm -rf static/**/
 mv dist/* static/

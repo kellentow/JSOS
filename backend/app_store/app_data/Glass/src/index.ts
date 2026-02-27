@@ -1,4 +1,5 @@
 import {OS, OS_Process, IPCWrapper} from "./../../../../../src/os-classes"
+import {waitForDefined} from "../../../../../src/helpers"
 
 declare global {
     interface Window {
@@ -17,72 +18,14 @@ interface GlassWindow {
     height: number;
     z: number;
     id: string;
+    tracking: number | undefined;
 }
 
-function waitForDefined(getValue: () => any, interval = 50, timeout?: number): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const start = Date.now();
-        let id: number | undefined;
-
-        const check = () => {
-            try {
-                const value = getValue();
-                if (value !== undefined) {
-                    if (id !== undefined) clearInterval(id);
-                    resolve(value);
-                    return true;
-                }
-                if (timeout != null && Date.now() - start > timeout) {
-                    if (id !== undefined) clearInterval(id);
-                    reject(new Error("waitForDefined: timeout"));
-                    return true;
-                }
-            } catch (err) {
-                if (id !== undefined) clearInterval(id);
-                reject(err);
-                return true;
-            }
-            return false;
-        };
-
-        // immediate check
-        if (check()) return;
-
-        id = setInterval(() => {
-            check();
-        }, interval) as unknown as number;
-    });
-}
-
-let windows: GlassWindow[] = [];
-let ipcs: IPCWrapper[] = [];
+let windows: Record<string,GlassWindow> = {};
 let pdoc: Document | undefined = undefined;
 
 // process up to N messages from one IPC per frame to avoid starvation
 const MAX_MSGS_PER_IPC = 100;
-
-function importOrParseElement(nodeLike: any): Node | null {
-    if (!pdoc) return null;
-    // If it's already a Node (from same origin parent doc), try importNode
-    if (nodeLike?.nodeType != null) {
-        try {
-            return pdoc.importNode(nodeLike, true);
-        } catch (e) {
-            // fallback: clone by outerHTML
-            const wrapper = pdoc.createElement("div");
-            wrapper.appendChild(nodeLike.cloneNode(true));
-            return wrapper.firstChild;
-        }
-    }
-    // If it's a string of HTML, parse it
-    if (typeof nodeLike === "string") {
-        const frag = pdoc.createRange().createContextualFragment(nodeLike);
-        // return a single element if possible, otherwise the fragment
-        if (frag.childNodes.length === 1) return frag.firstChild;
-        return frag;
-    }
-    return null;
-}
 
 function IPCHandler(ipc: IPCWrapper) {
     if (!pdoc) throw new Error("User refused DOM access");
@@ -102,13 +45,13 @@ function IPCHandler(ipc: IPCWrapper) {
 
         try {
             if (msg.type === "pos") {
-                let win:GlassWindow = windows.find((v)=>{return v.id == msg.target}) as GlassWindow
+                let win:GlassWindow = windows[msg.target] as GlassWindow
                 if (!win) continue
                 if (typeof msg.x === "number") win.x = msg.x;
                 if (typeof msg.y === "number") win.y = msg.y;
                 if (msg.z && typeof msg.z === "number") win.z = msg.z
             } else if (msg.type === "size") {
-                let win:GlassWindow = windows.find((v)=>{return v.id == msg.target}) as GlassWindow
+                let win:GlassWindow = windows[msg.target] as GlassWindow
                 if (!win) continue
                 if (typeof msg.width === "number") win.width = msg.width;
                 if (typeof msg.height === "number") win.height = msg.height;
@@ -116,17 +59,19 @@ function IPCHandler(ipc: IPCWrapper) {
                 let win = pdoc.createElement("iframe")
                 let id = crypto.randomUUID()
                 win.style.borderWidth = "0px"
+                win.setAttribute("Glass-id", id)
                 win.srcdoc = ""
                 win.sandbox = "allow-same-origin"
-                windows.push({
+                windows[id] = {
                     x:0,
                     y:0,
                     z:0,
                     width:0,
                     height:0,
                     element:win,
-                    id
-                })
+                    id,
+                    tracking:undefined
+                }
 
                 pdoc.body.appendChild(win)
                 win.addEventListener("load", () => {
@@ -135,7 +80,7 @@ function IPCHandler(ipc: IPCWrapper) {
                 })
             } else if (msg.type == "info") {
                 let windows_safe:{x:number,y:number,z:number,width:number,height:number,id:string}[] = []
-                windows.forEach((window:GlassWindow)=>{
+                Object.values(windows).forEach((window:GlassWindow)=>{
                     windows_safe.push({
                         x:window.x,
                         y:window.y,
@@ -155,7 +100,16 @@ function IPCHandler(ipc: IPCWrapper) {
                     },
                     windows:windows_safe
                 })
-            } else {
+            } else if (msg.type == "track") {
+                let win:GlassWindow = windows[msg.target] as GlassWindow
+                if (!win) continue
+                if (typeof msg.pid === "number") win.tracking = msg.pid;
+            } else if (msg.type == "destroy") {
+                let win:GlassWindow = windows[msg.target] as GlassWindow
+                if (!win) continue
+                win.element.remove()
+                delete windows[win.id]
+            }  else {
                 console.warn("Unknown IPC message type:", msg.type);
             }
         } catch (err) {
@@ -196,13 +150,20 @@ function updateLoop() {
         IPCHandler(ipc);
     });
 
-    windows.forEach((win, i) => {
+    Object.values(windows).forEach((win, i) => {
+        if (win.tracking !== undefined && window.os.getProcess(win.tracking) === undefined) {
+            // the proc that claimed this window died so destroy the window
+            win.element.remove()
+            delete windows[win.id]
+        }
         const el = win.element;
         el.style.position = "absolute";
-        if (win.x+"px" != el.style.left)        el.style.left = `${win.x}px`;
-        if (win.y+"px" != el.style.top)         el.style.top = `${win.y}px`;
-        if (win.width+"px" != el.style.width)   el.style.width = `${win.width}px`;
-        if (win.height+"px" != el.style.height) el.style.height = `${win.height}px`;
+        
+        el.style.left = `${win.x}px`;
+        el.style.top = `${win.y}px`;
+        el.style.width = `${win.width}px`;
+        el.style.height = `${win.height}px`;
+
         el.style.overflow = "clip"
         el.style.zIndex = String(win.z);
     });

@@ -48,7 +48,8 @@ class OS { // NOT FINISHED
     #processes: OS_Process[] = [];
     #processKeys: Map<ProcessKey, OS_Process> = new Map();
 
-    #parents: Map<OS_Process, OS_Process[]> = new Map();
+    #children: Map<OS_Process, OS_Process[]> = new Map();
+    #parent: Map<OS_Process, OS_Process | OS> = new Map(); 
     #procAs: Map<OS_Process, number> = new Map();
     #perms: Map<OS_Process, number> = new Map();
     #scripts: Map<OS_Process, Sandbox> = new Map();
@@ -56,15 +57,16 @@ class OS { // NOT FINISHED
 
     #lastPID: number = 0;
     #root_proc: OS_Process;
+    #root_key: ProcessKey;
 
     constructor() {
         this.#root_proc = new OS_Process("root", this, null, ({ overrideEnv: (...args: any[]) => { } } as any as Sandbox))
         this.#perms.set(this.#root_proc, 31)
         this.#processes.push(this.#root_proc)
-        let getKey = this.#root_proc.getKey // preserve get key for whatever is creating the OS to run root calls
-        this.#processKeys.set(this.#root_proc.getKey() as ProcessKey, this.#root_proc)
-        this.#root_proc.getKey = getKey
-        this.#parents.set(this.#root_proc, []);
+        this.#root_key = this.#root_proc.getKey() as ProcessKey
+        this.#processKeys.set(this.#root_key, this.#root_proc)
+        this.#children.set(this.#root_proc, []);
+        this.#parent.set(this.#root_proc, this)
         this.#procAs.set(this.#root_proc, 0)
         this.#fs.save()
     }
@@ -74,10 +76,11 @@ class OS { // NOT FINISHED
     }
 
     // One time use, for the kernel aka the script constructing the OS
-    getKernelData(): { root: OS_Process, fs: FS } | undefined {
+    getKernelData(): { root: OS_Process, fs: FS, key: ProcessKey } | undefined {
         this.getKernelData = () => { return undefined }
         return {
             root: this.#root_proc,
+            key: this.#root_key,
             fs: this.#fs
         }
     }
@@ -98,7 +101,7 @@ class OS { // NOT FINISHED
 
         let proc = new OS_Process(name, this, parent, sandbox)
 
-        let key = proc.getKey() as ProcessKey
+        let key = proc.getKey(this.#root_key) as ProcessKey
 
         this.#processKeys.set(key, proc)
         this.#procAs.set(proc, this.#procAs.get(parent) as number)
@@ -114,13 +117,20 @@ class OS { // NOT FINISHED
                     return undefined
                 }
             },
-            fs: ()=>{return this.#fs.createWrapper(()=>{return this.#procAs.get(proc) as number})},
-            proc
+            fs: () => { return this.#fs.createWrapper(() => { return this.#procAs.get(proc) as number }) },
+            proc,
+            requestSudo: (reason: string) => {
+                if (confirm(`Process "${proc.getName()}" (${proc.getPID()}) is requesting sudo permissions.\nReason: "${reason}"`)) {
+                    this.#procAs.set(proc, 0)
+                }
+                return this.#procAs.get(proc) == 0
+            }
         } as any);
 
         this.#perms.set(proc, this.#perms.get(parent) as number)
 
-        this.#parents.get(parent)?.push(proc)
+        this.#children.get(parent)?.push(proc)
+        this.#parent.set(proc, parent)
 
         this.#scripts.set(proc, sandbox)
 
@@ -156,20 +166,29 @@ class OS { // NOT FINISHED
         return null
     }
 
-    killProcess(key: ProcessKey) {
-        let proc;
-        if (this.#processKeys.has(key)) {
-            proc = this.#processKeys.get(key) as OS_Process;
-        } else { return null }
-        for (let child of this.#parents.get(proc) || []) {
-            this.killProcess(child.getKey() as any);
+    killProcess(key: ProcessKey, target?: OS_Process) {
+        if (!target) {
+            if (this.#processKeys.has(key) && this.isRoot(key)) {
+                target = this.#processKeys.get(key) as OS_Process;
+            } else { return null }
         }
-        this.#scripts.get(proc)?.destroy()
-        this.#scripts.delete(proc)
-        this.#processKeys.delete(key)
-        this.#processes = this.#processes.filter((v) => v !== proc)
-        this.#parents.delete(proc)
-        this.#procAs.delete(proc)
+
+        let target_key = this.#processKeys.get(target)
+
+        for (let child of this.#children.get(target) || []) {
+            this.killProcess(child.getKey(this.#root_proc) as any);
+        }
+        this.#scripts.get(target)?.destroy()
+        this.#scripts.delete(target)
+        this.#processKeys.delete(target_key as ProcessKey)
+        this.#processes = this.#processes.filter((v) => v !== target)
+        let parent = this.#parent.get(target)
+        if (parent instanceof OS_Process) {
+            this.#children.set(parent,this.#children.get(parent)?.filter((v) => v !== target) as OS_Process[])
+            parent.children = parent.children.filter((v) => v !== target)
+        }
+        this.#parent.delete(target)
+        this.#procAs.delete(target)
     }
 
     requestPermissions(key: ProcessKey, n: Permission, reason: string) {
@@ -181,8 +200,12 @@ class OS { // NOT FINISHED
         if (!permName || !this.#perms.has(proc)) {
             return
         }
-        let y = confirm(`Do you want to give "${proc.getName()}" this permission:\n${permName}\nReason: "${reason}"`)
-        if (y) {
+        let can = this.isRoot(key) || ((this.#perms.get(proc) as number) & n) !== 0
+        if (!can) {
+            can = confirm(`Do you want to give "${proc.getName()}" this permission:\n${permName}\nReason: "${reason}"`)
+        }
+
+        if (can) {
             let perms = this.#perms.get(proc) as number;
             this.#perms.set(proc, perms | n);
         }
@@ -199,6 +222,16 @@ class OS { // NOT FINISHED
         if (this.isRoot(key)) {
             this.#procAs.set(target, user) //ok change user
         }
+    }
+
+    getProcUser(key: ProcessKey, target: OS_Process) {
+        if (this.isRoot(key) || target == this.#processKeys.get(key)) {
+            return this.#procAs.get(target)
+        }
+    }
+
+    getProcess(pid:number) {
+        return this.#processes[pid] || undefined
     }
 } // NOT FINISHED
 
@@ -298,10 +331,12 @@ FSNode.registry = {
 class FSFD {
     #file: FSFile
     #ptr: number = 0
+    #fs: FS;
     #perms: number = 0o0
-    constructor(file: FSFile, perms: number) {
+    constructor(file: FSFile, perms: number, fs: FS) {
         this.#file = file
         this.#perms = perms
+        this.#fs = fs
     }
 
     read() {
@@ -317,6 +352,7 @@ class FSFD {
             newBuf.set(this.#file.contents)
             this.#file.contents = newBuf
         }
+        this.#fs.queueSave()
         return this.#file.contents[this.#ptr++] = byte & 0xFF
     }
 
@@ -327,16 +363,34 @@ class FSFD {
 }
 
 interface FSWrapper {
-    touch: (path:string)=>boolean;
-    mkdir: (path:string)=>boolean;
-    open: (path:string)=>FSFD | undefined
+    getPerms: (path:string) => number;
+    touch: (path: string) => boolean;
+    mkdir: (path: string) => boolean;
+    open: (path: string) => FSFD | undefined;
+    lsdir: (path: string) => string[] | undefined;
+    isdir: (path: string) => boolean | undefined;
+    rm: (path: string) => boolean | undefined;
+    stat: (path:string) => false | {owner:number,perms:number,type:string};
+    dirname: (path:string) => string;
+    normalize: (path:string) => string;
 }
 
 class FS {
     #files: FSDir;
+    #saveTimeout: number | undefined;
     constructor() {
         this.#files = new FSDir()
-        setInterval(() => { this.save() }, 30 * 1000)
+    }
+
+    queueSave() {
+        if (this.#saveTimeout !== undefined) {
+            clearTimeout(this.#saveTimeout)
+        }
+        // ts thinks it's it's own Timeout object so im forcing number
+        this.#saveTimeout = setTimeout(()=>{
+            this.#saveTimeout = undefined
+            this.save()
+        },1000) as any as number
     }
 
     save() {
@@ -387,8 +441,8 @@ class FS {
         return node
     }
 
-    dirname(path:string) {
-        const parts = this.parse_path(path).slice(0,-1)
+    dirname(path: string) {
+        const parts = this.parse_path(path).slice(0, -1)
         return parts.length ? "/" + parts.join("/") : "/"
     }
 
@@ -404,6 +458,7 @@ class FS {
         let last = path_arr[path_arr.length - 1]
         if (parent.children[last]) return false
         parent.children[last] = new FSDir()
+        ;this.queueSave();
         return true
     }
 
@@ -415,6 +470,15 @@ class FS {
         let last = path_arr[path_arr.length - 1]
         if (parent.children[last]) return false
         parent.children[last] = new FSFile()
+        ;this.queueSave();
+        return true
+    }
+
+    rm (path:string) {
+        let parent = this.getNode(this.dirname(path)) as FSDir
+        if (!parent) return false
+        delete parent.children[this.parse_path(path).slice(-1)[0]]
+        ;this.queueSave();
         return true
     }
 
@@ -422,10 +486,11 @@ class FS {
         let file = this.getNode(path) as FSFile
         if (!file || file.type !== "File") return
 
-        return new FSFD(file, perms)
+        return new FSFD(file, perms, this)
     }
 
     getUserPerms(path: string, uid: number) {
+        if (uid == 0) return 0o7
         if (!this.path_exists(path)) return
         let parts = this.parse_path(path)
         let perm = 0o0
@@ -440,26 +505,62 @@ class FS {
         return perm
     }
 
-    createWrapper(uid_solver: ()=>number):FSWrapper {
+    createWrapper(uid_solver: () => number): FSWrapper {
         return {
+            getPerms: (path:string) => {
+                return this.getUserPerms(path,uid_solver()) || 0
+            },
             mkdir: (path: string) => {
-                let perm = this.getUserPerms(this.dirname(path),uid_solver())
+                let perm = this.getUserPerms(this.dirname(path), uid_solver())
                 if (perm !== undefined && perm & FSPermission.w) {
                     return this.mkdir(path)
                 }
                 return false
             },
             touch: (path: string) => {
-                let perm = this.getUserPerms(this.dirname(path),uid_solver())
+                let perm = this.getUserPerms(this.dirname(path), uid_solver())
                 if (perm !== undefined && perm & FSPermission.w) {
                     return this.touch(path)
                 }
                 return false
             },
             open: (path: string) => {
-                let perm = this.getUserPerms(path,uid_solver())
+                let perm = this.getUserPerms(path, uid_solver())
                 if (perm === undefined) return
                 return this.getFD(path, perm)
+            },
+            lsdir: (path: string) => {
+                let perm = this.getUserPerms(path, uid_solver())
+                if (perm === undefined || (perm & FSPermission.r) == 0) return
+                let node = this.getNode(path)
+                if (!node || node.type !== "Directory") return
+                return Object.keys((node as FSDir).children)
+            },
+            isdir: (path: string) => {
+                let perm = this.getUserPerms(this.dirname(path), uid_solver())
+                if (perm === undefined || (perm & FSPermission.r) == 0) return false
+
+                let node = this.getNode(path)
+                if (!node) return false
+                return node.type == "Directory"
+            },
+            rm: (path: string) => {
+                let perm = this.getUserPerms(this.dirname(path), uid_solver())
+                if (perm === undefined || (perm & FSPermission.w) == 0) return false
+                return this.rm(path)
+            },
+            stat: (path:string) => {
+                let perm = this.getUserPerms(path, uid_solver())
+                if (perm === undefined || (perm & FSPermission.r) == 0) return false
+                let node = this.getNode(path)
+                if (!node) return false
+                return {owner:node.owner,perms:node.perms,type:node.type}
+            },
+            dirname: (path:string) => {
+                return this.dirname(path)
+            },
+            normalize: (path:string) => {
+                return "/" + this.parse_path(path).join("/")
             }
         }
     }
@@ -555,8 +656,14 @@ class OS_Process {
         } as any);
     }
 
-    getKey(): ProcessKey | undefined {
-        this.getKey = () => { return undefined }
+    getKey(key?: ProcessKey): ProcessKey | undefined {
+        this.getKey = (key?: ProcessKey) => {
+            if (key === undefined) return undefined
+            if (key === this.#key || this.#os.isRoot(key)) {
+                return this.#key;
+            }
+            return undefined;
+        }
         return this.#key
     }
 
@@ -592,7 +699,7 @@ class OS_Process {
         return this.getPermissions(type);
     }
 
-    async createChildProcess(key:ProcessKey, name: string, code: string) {
+    async createChildProcess(key: ProcessKey, name: string, code: string) {
         if (key !== this.#key) return
         if (this.getPermissions(Permission.CreateProcess)) { // Check for create child process permission
             let child = await this.#os.createProcess(this.#key, name, code) as OS_Process;
@@ -632,4 +739,4 @@ class IPC {
     }
 }
 
-export { Permission, OSErrorCode, OSError, OS, FS, OS_Process, IPC, ProcessKey, IPCWrapper, FSPermission, FSWrapper}
+export { Permission, OSErrorCode, OSError, OS, FS, OS_Process, IPC, ProcessKey, IPCWrapper, FSPermission, FSWrapper, FSFD }

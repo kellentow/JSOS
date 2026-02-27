@@ -27,12 +27,14 @@ window = {
     parent_doc: () => (Document | undefined),
     fs: () => (FSWrapper | undefined),
     proc: OS_Process,
-    prockey: ProcessKey
+    prockey: ProcessKey,
+    requestSudo: () => boolean
 }
 ```
 
 parent_doc requires the "EditDom" permission (id 16)
 fs requires the "UseFilesystem" permission (id 2)
+requestSudo asks the user if the current process can elevate it's perms to uid 0 (aka root)
 
 For more APIS check os-classes.ts
 

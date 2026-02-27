@@ -3,8 +3,7 @@ import { OS, OS_Process, ProcessKey, FS, FSPermission } from './os-classes.js'
 import { unzip } from 'https://unpkg.com/unzipit@1.4.2/dist/unzipit.module.js';
 
 let os = new OS()
-let { root, fs } = os.getKernelData() as any as { root: OS_Process, fs: FS }
-let root_key = root.getKey() as ProcessKey
+let { root, fs, key: root_key } = os.getKernelData() as any as { root: OS_Process, fs: FS, key: ProcessKey }
 
 // @ts-ignore
 window.os = os
@@ -83,3 +82,7 @@ async function run_app(path: string, name: string, uid: number) {
 // USER IS uid 1000
 await run_app("/apps/glass", "Glass", 1)
 await run_app("/apps/glasstop", "Glasstop", 2)
+setTimeout(async () => {
+    await run_app("/apps/fileexplorer", "FileExplorer", 1000)
+    await run_app("/apps/taskmanager", "TaskManager", 0)
+}, 3000)

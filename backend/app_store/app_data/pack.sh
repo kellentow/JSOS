@@ -17,12 +17,12 @@ for d in "$SCRIPT_DIR"/*/ ; do
     echo "Compiling app: $DIR_NAME"
     pushd $DIR_NAME > /dev/null
 
-    esbuild ./src/index.ts --outdir="../tmp_build/"
+    esbuild ./src/index.ts --outdir="../tmp_build/" --log-level=warning --bundle
     if [ $? -ne 0 ]; then
         echo "Build failed for $DIR_NAME (esbuild error)"
         exit 1
     fi
-    rsync -av --exclude='*.ts' --exclude='*.js' ./src/ ../tmp_build/
+    rsync -av --exclude='*.ts' --exclude='*.js' ./src/ ../tmp_build/ > /dev/null
     if [ $? -ne 0 ]; then
         echo "Build failed for $DIR_NAME (static clone error)"
         exit 1
@@ -30,7 +30,7 @@ for d in "$SCRIPT_DIR"/*/ ; do
 
     pushd ../tmp_build/ > /dev/null
 
-    zip -r "../$(basename $DIR_NAME).zip" ./*
+    zip -r "../$(basename $DIR_NAME).zip" ./* -q
     if [ $? -ne 0 ]; then
         echo "Build failed for $DIR_NAME (zip error)"
         exit 1

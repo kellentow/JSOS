@@ -23,6 +23,10 @@ if ka > 0:
 def index():
     return flask.send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), 'index.html')
 
+@app.route('/sw.js')
+def sw_js():
+    return flask.send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), 'service-worker.js')
+
 @app.route("/ka")
 def ka():
     return "", 200
