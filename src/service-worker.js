@@ -2,8 +2,8 @@ const cacheName = 'cache-v1';
 const assetsToCache = [
   '/',
   '/static/index.html',
-  '/static/src/os.js',
-  '/static/src/os-classes.js',
+  '/static/os.js',
+  '/static/os-classes.js',
 ];
 
 self.addEventListener('install',  (event) => {
