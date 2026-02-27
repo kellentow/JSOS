@@ -7,3 +7,5 @@ static/helpers.js
 static/os.js.map
 static/os-classes.js.map
 static/helpers.js.map
+backend/app_store/app_data/*.zip
+backend/app_store/app_data/*.metadata

@@ -5,6 +5,9 @@ import { unzip } from 'https://unpkg.com/unzipit@1.4.2/dist/unzipit.module.js';
 let os = new OS()
 let { root, fs, key: root_key } = os.getKernelData() as any as { root: OS_Process, fs: FS, key: ProcessKey }
 
+//@ts-expect-error
+console.log("Build ID: " + BUILD)
+
 // @ts-ignore
 window.os = os
 // @ts-ignore
