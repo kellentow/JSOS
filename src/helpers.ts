@@ -1,4 +1,4 @@
-import { OS, OS_Process, IPCWrapper, FSWrapper, ProcessKey } from "./os-classes"
+import { OS, OS_Process, IPCWrapper, FSWrapper, ProcessKey, FSFD } from "./os-classes"
 
 declare global {
     interface Window {
@@ -8,7 +8,8 @@ declare global {
         proc: OS_Process;
         prockey: ProcessKey;
         fs: () => FSWrapper;
-        requestSudo: (reason: string) => boolean
+        requestSudo: (reason: string) => boolean;
+        cwd:string;
     }
 }
 
@@ -61,6 +62,7 @@ class GWindow {
         this.#ipc.send({ type: "new" })
 
         waitForDefined(() => { return this.#ipc.recv() }).then((msg) => {
+            console.log("got message from glass", msg)
             if (!msg || msg.type != "new") {
                 throw Error("Glass sent unexpected message")
             }
@@ -87,4 +89,23 @@ class GWindow {
     }
 }
 
-export {GWindow, waitForDefined}
+function readFile(fd: FSFD | undefined): Uint8Array {
+    let bytes: number[] = []
+    if (fd) {
+        let out: number | null = fd.read()
+        while (out !== null) {
+            bytes.push(out)
+            out = fd.read()
+        }
+    }
+    return new Uint8Array(bytes)
+}
+
+function writeFile(fd: FSFD | undefined, contents: Uint8Array) {
+    if (!fd) { throw Error("Could not write to undefined file descriptor") }
+    for (let i = 0; i < contents.length; i++) {
+        fd.write(contents[i])
+    }
+}
+
+export {GWindow, waitForDefined, readFile, writeFile}

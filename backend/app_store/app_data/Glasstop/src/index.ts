@@ -1,5 +1,5 @@
 import { OS, OS_Process, FSFD } from "./../../../../../src/os-classes"
-import { GWindow, waitForDefined } from "./../../../../../src/helpers"
+import { GWindow, waitForDefined, readFile } from "./../../../../../src/helpers"
 
 interface GlassInfo {
     type: string,
@@ -22,18 +22,6 @@ async function update(Gwindow: GWindow) {
     requestAnimationFrame(async () => { await update(Gwindow) })
 }
 
-function readFile(fd: FSFD | undefined): Uint8Array {
-    let bytes: number[] = []
-    if (fd) {
-        let out: number | null = fd.read()
-        while (out !== null) {
-            bytes.push(out)
-            out = fd.read()
-        }
-    }
-    return new Uint8Array(bytes)
-}
-
 document.addEventListener("os-load", async () => {
     let process = (window.proc as OS_Process)
     let os = (window.os as OS)
@@ -51,17 +39,24 @@ document.addEventListener("os-load", async () => {
 
     os.createIPC(process, glass)
     let Gwindow = new GWindow(window.IPCs[0], () => {
+        Gwindow.track();
         update(Gwindow)
-        let fd = fs.open("/apps/glasstop/index.html");
-        Gwindow.document.documentElement.innerHTML = new TextDecoder().decode(readFile(fd));
+        let fd = fs.open(window.cwd+"/index.html");
+        let html = new TextDecoder().decode(readFile(fd))
+        Gwindow.document.documentElement.innerHTML = html;
 
         let wallpaper = Gwindow.document.getElementById("wallpaper") as HTMLImageElement
         let boot_anim = Gwindow.document.getElementById("boot_anim") as HTMLDivElement
         
-        let wallpaper_fd = fs.open("/apps/glasstop/wallpaper.png")
+        let wallpaper_fd = fs.open(window.cwd+"/wallpaper.png")
         //ts is wack "ArrayBufferLike is not assignable to type ArrayBuffer" so im just using as any
         let wallpaper_blob = new Blob([readFile(wallpaper_fd).buffer as any], { type: "image/png" })
-        wallpaper.src = URL.createObjectURL(wallpaper_blob)
+        if (wallpaper_blob.size == 0) { // for some reason it read nothing so default to default bg
+            // made it with this https://shoonia.github.io/1x1/#86c6ffff
+            wallpaper.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAAD0lEQVR4AQEEAPv/AIbG/wQhAkwI5Wp+AAAAAElFTkSuQmCC"
+        } else {
+            wallpaper.src = URL.createObjectURL(wallpaper_blob)
+        }
 
         setTimeout(() => {
             boot_anim.classList.add("fill");

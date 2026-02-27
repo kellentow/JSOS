@@ -90,7 +90,7 @@ class OS { // NOT FINISHED
         return this.#lastPID
     }
 
-    async createProcess(parentKey: ProcessKey, name: string, script: string): Promise<OS_Process | undefined> {
+    async createProcess(parentKey: ProcessKey, name: string, script: string, cwd:string="/"): Promise<OS_Process | undefined> {
         if (!this.#processKeys.has(parentKey)) { return }
 
         const sandbox = new Sandbox(script, name, {})
@@ -124,7 +124,8 @@ class OS { // NOT FINISHED
                     this.#procAs.set(proc, 0)
                 }
                 return this.#procAs.get(proc) == 0
-            }
+            },
+            cwd
         } as any);
 
         this.#perms.set(proc, this.#perms.get(parent) as number)
@@ -231,7 +232,8 @@ class OS { // NOT FINISHED
     }
 
     getProcess(pid:number) {
-        return this.#processes[pid] || undefined
+        let proc = this.#processes.find(p => p.getPID() == pid)
+        return proc
     }
 } // NOT FINISHED
 
@@ -699,10 +701,10 @@ class OS_Process {
         return this.getPermissions(type);
     }
 
-    async createChildProcess(key: ProcessKey, name: string, code: string) {
+    async createChildProcess(key: ProcessKey, name: string, code: string, cwd:string="/"): Promise<OS_Process | undefined> {
         if (key !== this.#key) return
         if (this.getPermissions(Permission.CreateProcess)) { // Check for create child process permission
-            let child = await this.#os.createProcess(this.#key, name, code) as OS_Process;
+            let child = await this.#os.createProcess(this.#key, name, code, cwd) as OS_Process;
             this.children.push(child);
             return child;
         }

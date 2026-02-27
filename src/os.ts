@@ -76,7 +76,7 @@ async function run_app(path: string, name: string, uid: number) {
         await extract_zip(path, arrayBuffer)
     }
     let app_code = new TextDecoder().decode(readFile(path + "/index.js"));
-    let proc = await root.createChildProcess(root_key, name, app_code as string)
+    let proc = await root.createChildProcess(root_key, name, app_code as string,path)
     if (proc) {
         os.setProcUser(root_key, proc, uid)
     }

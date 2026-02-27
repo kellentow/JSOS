@@ -18,7 +18,8 @@ document.addEventListener("os-load", async () => {
 
     os.createIPC(process, glass)
     let Gwindow = new GWindow(window.IPCs[0],() => {
-        let fd = fs.open("/apps/taskmanager/index.html");
+        Gwindow.track();
+        let fd = fs.open(window.cwd+"/index.html");
         let bytes:number[] = []
         if (fd) {
             let out:number | null = fd.read()

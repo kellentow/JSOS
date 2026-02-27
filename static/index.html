@@ -7,29 +7,47 @@
     <title>JSOS Online</title>
     <style>
         body {
-            overflow: hidden
+            overflow: hidden;
+            background-color: black;
         }
     </style>
     <link rel="manifest" href="/static/manifest.json">
 </head>
 
 <body>
-    <p> If you see this, something went VERY wrong, click on this text to reset JSOS </p>
+    <p style="color:white"> If you see this, something went VERY wrong, press ctrl+shift+q to reset JSOS </p>
     <script>
-        document.body.children[0].onclick = () => {
-            localStorage.clear()
-            indexedDB.databases().then(async (dbs)=>{
-                dbs.forEach(db => {
-                    indexedDB.deleteDatabase(db.name)
-                });
+        document.body.children[0].style.opacity = "0"
+        document.body.children[0].style.transition = "opacity 1s ease-in-out"
+        setTimeout(() => {
+            document.body.children[0].style.opacity = "1"
+            document.addEventListener("keydown", async (e) => {
+                e.preventDefault();
+                if (e.shiftKey && e.ctrlKey && e.key == "Q") {
+                    e.preventDefault();
+                    if (confirm("Are you sure you want to reset JSOS?")) {
+                        localStorage.clear()
+
+                        let dbs = await indexedDB.databases()
+                        for (let i=0; i<dbs.length;i++) {
+                            await indexedDB.deleteDatabase(dbs[i].name)
+                        }
+                        
+                        let cookies = await cookieStore.getAll()
+                        for (let i=0; i<cookies.length;i++) {
+                            await cookieStore.delete(cookies[i].name)
+                        }
+
+                        let cache_names = await caches.keys()
+                        for (let i=0; i<cache_names.length;i++) {
+                            await caches.delete(cache_names[i])
+                        }
+
+                        setTimeout(() => { window.location.reload() }, 50)
+                    }
+                }
             })
-            cookieStore.getAll().then((cookies)=>{
-                cookies.forEach((cookie)=>{
-                    cookieStore.delete(cookie)
-                })
-            })
-            setTimeout(()=>{window.location.reload()},1000)
-        }
+        }, 1000)
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js')
                 .then(() => console.log('Service Worker registered'))
