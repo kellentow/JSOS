@@ -85,10 +85,10 @@ document.addEventListener("os-load", async () => {
         }
         Gwindow.move(100, 100, 3)
         Gwindow.scale(300, 400)
-        setTimeout(() => {
-            window.requestSudo("dev purposes only");
-            stale = true
-        }, 100)
+        //setTimeout(() => {
+        //    window.requestSudo("dev purposes only");
+        //    stale = true
+        //}, 100)
 
         function staleHandler() {
             if (stale) {

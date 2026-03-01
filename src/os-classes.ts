@@ -49,7 +49,7 @@ class OS { // NOT FINISHED
     #processKeys: Map<ProcessKey, OS_Process> = new Map();
 
     #children: Map<OS_Process, OS_Process[]> = new Map();
-    #parent: Map<OS_Process, OS_Process | OS> = new Map(); 
+    #parent: Map<OS_Process, OS_Process | OS> = new Map();
     #procAs: Map<OS_Process, number> = new Map();
     #perms: Map<OS_Process, number> = new Map();
     #scripts: Map<OS_Process, Sandbox> = new Map();
@@ -90,7 +90,7 @@ class OS { // NOT FINISHED
         return this.#lastPID
     }
 
-    async createProcess(parentKey: ProcessKey, name: string, script: string, cwd:string="/"): Promise<OS_Process | undefined> {
+    async createProcess(parentKey: ProcessKey, name: string, script: string, cwd: string = "/"): Promise<OS_Process | undefined> {
         if (!this.#processKeys.has(parentKey)) { return }
 
         const sandbox = new Sandbox(script, name, {})
@@ -121,7 +121,7 @@ class OS { // NOT FINISHED
             proc,
             requestSudo: (reason: string) => {
                 if (confirm(`Process "${proc.getName()}" (${proc.getPID()}) is requesting sudo permissions.\nReason: "${reason}"`)) {
-                    this.#procAs.set(proc, 0)
+                    this.setProcUser(this.#root_key, proc, 0)
                 }
                 return this.#procAs.get(proc) == 0
             },
@@ -185,7 +185,7 @@ class OS { // NOT FINISHED
         this.#processes = this.#processes.filter((v) => v !== target)
         let parent = this.#parent.get(target)
         if (parent instanceof OS_Process) {
-            this.#children.set(parent,this.#children.get(parent)?.filter((v) => v !== target) as OS_Process[])
+            this.#children.set(parent, this.#children.get(parent)?.filter((v) => v !== target) as OS_Process[])
             parent.children = parent.children.filter((v) => v !== target)
         }
         this.#parent.delete(target)
@@ -231,7 +231,7 @@ class OS { // NOT FINISHED
         }
     }
 
-    getProcess(pid:number) {
+    getProcess(pid: number) {
         let proc = this.#processes.find(p => p.getPID() == pid)
         return proc
     }
@@ -242,7 +242,8 @@ type NodeType = "Node" | "File" | "Directory";
 class FSNode {
     owner: number = 0
     //group: number = 0
-    perms: number = 0o755
+    // rwxr-xr-x
+    perms: number = 0o777
     type: NodeType = "Node"
     static registry: Record<string, typeof FSNode> = {}
 
@@ -362,19 +363,49 @@ class FSFD {
         if (position < 0) position = 0
         this.#ptr = position
     }
+
+    length() {
+        return this.#file.contents.length
+    }
+
+    readBLK(num: number) {
+        if ((this.#perms & FSPermission.r) == 0) return null
+        if (this.#ptr >= this.#file.contents.length) return null
+        let start = this.#ptr
+        this.#ptr += num + 1
+        let end = this.#ptr
+        return this.#file.contents.slice(start, end)
+    }
+
+    writeBLK(contents: Uint8Array) {
+        if ((this.#perms & FSPermission.w) === 0) return;
+
+        const requiredLength = this.#ptr + contents.length;
+        if (requiredLength > this.#file.contents.length) {
+            // Extend the file
+            const newBuf = new Uint8Array(requiredLength);
+            newBuf.set(this.#file.contents);
+            this.#file.contents = newBuf;
+        }
+
+        this.#file.contents.set(contents, this.#ptr);
+        this.#ptr += contents.length;
+
+        this.#fs.queueSave();
+    }
 }
 
 interface FSWrapper {
-    getPerms: (path:string) => number;
+    getPerms: (path: string) => number;
     touch: (path: string) => boolean;
     mkdir: (path: string) => boolean;
     open: (path: string) => FSFD | undefined;
     lsdir: (path: string) => string[] | undefined;
     isdir: (path: string) => boolean | undefined;
     rm: (path: string) => boolean | undefined;
-    stat: (path:string) => false | {owner:number,perms:number,type:string};
-    dirname: (path:string) => string;
-    normalize: (path:string) => string;
+    stat: (path: string) => false | { owner: number, perms: number, type: string };
+    dirname: (path: string) => string;
+    normalize: (path: string) => string;
 }
 
 class FS {
@@ -389,10 +420,10 @@ class FS {
             clearTimeout(this.#saveTimeout)
         }
         // ts thinks it's it's own Timeout object so im forcing number
-        this.#saveTimeout = setTimeout(()=>{
+        this.#saveTimeout = setTimeout(() => {
             this.#saveTimeout = undefined
             this.save()
-        },1000) as any as number
+        }, 1000) as any as number
     }
 
     save() {
@@ -460,7 +491,7 @@ class FS {
         let last = path_arr[path_arr.length - 1]
         if (parent.children[last]) return false
         parent.children[last] = new FSDir()
-        ;this.queueSave();
+            ; this.queueSave();
         return true
     }
 
@@ -472,15 +503,15 @@ class FS {
         let last = path_arr[path_arr.length - 1]
         if (parent.children[last]) return false
         parent.children[last] = new FSFile()
-        ;this.queueSave();
+            ; this.queueSave();
         return true
     }
 
-    rm (path:string) {
+    rm(path: string) {
         let parent = this.getNode(this.dirname(path)) as FSDir
         if (!parent) return false
         delete parent.children[this.parse_path(path).slice(-1)[0]]
-        ;this.queueSave();
+            ; this.queueSave();
         return true
     }
 
@@ -509,8 +540,8 @@ class FS {
 
     createWrapper(uid_solver: () => number): FSWrapper {
         return {
-            getPerms: (path:string) => {
-                return this.getUserPerms(path,uid_solver()) || 0
+            getPerms: (path: string) => {
+                return this.getUserPerms(path, uid_solver()) || 0
             },
             mkdir: (path: string) => {
                 let perm = this.getUserPerms(this.dirname(path), uid_solver())
@@ -551,17 +582,17 @@ class FS {
                 if (perm === undefined || (perm & FSPermission.w) == 0) return false
                 return this.rm(path)
             },
-            stat: (path:string) => {
+            stat: (path: string) => {
                 let perm = this.getUserPerms(path, uid_solver())
                 if (perm === undefined || (perm & FSPermission.r) == 0) return false
                 let node = this.getNode(path)
                 if (!node) return false
-                return {owner:node.owner,perms:node.perms,type:node.type}
+                return { owner: node.owner, perms: node.perms, type: node.type }
             },
-            dirname: (path:string) => {
+            dirname: (path: string) => {
                 return this.dirname(path)
             },
-            normalize: (path:string) => {
+            normalize: (path: string) => {
                 return "/" + this.parse_path(path).join("/")
             }
         }
@@ -649,7 +680,7 @@ class OS_Process {
 
         sandbox.overrideEnv({
             fetch: async (input: RequestInfo, init?: RequestInit) => {
-                if (this.getPermissions(Permission.NetworkAccess)) {
+                if (this.getPermissions(Permission.NetworkAccess) || this.#os.isRoot(this.#key)) {
                     return await fetch(input, init)
                 }
                 return new Response(undefined, { status: 403 })
@@ -701,7 +732,7 @@ class OS_Process {
         return this.getPermissions(type);
     }
 
-    async createChildProcess(key: ProcessKey, name: string, code: string, cwd:string="/"): Promise<OS_Process | undefined> {
+    async createChildProcess(key: ProcessKey, name: string, code: string, cwd: string = "/"): Promise<OS_Process | undefined> {
         if (key !== this.#key) return
         if (this.getPermissions(Permission.CreateProcess)) { // Check for create child process permission
             let child = await this.#os.createProcess(this.#key, name, code, cwd) as OS_Process;
@@ -741,4 +772,4 @@ class IPC {
     }
 }
 
-export { Permission, OSErrorCode, OSError, OS, FS, OS_Process, IPC, ProcessKey, IPCWrapper, FSPermission, FSWrapper, FSFD }
+export { Permission, OSErrorCode, OSError, OS, FS, OS_Process, IPC, ProcessKey, IPCWrapper, FSPermission, FSWrapper, FSFD, FSDir, FSFile, FSNode }

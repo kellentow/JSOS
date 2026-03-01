@@ -9,7 +9,7 @@ declare global {
         prockey: ProcessKey;
         fs: () => FSWrapper;
         requestSudo: (reason: string) => boolean;
-        cwd:string;
+        cwd: string;
     }
 }
 
@@ -61,14 +61,17 @@ class GWindow {
 
         this.#ipc.send({ type: "new" })
 
-        waitForDefined(() => { return this.#ipc.recv() }).then((msg) => {
-            console.log("got message from glass", msg)
-            if (!msg || msg.type != "new") {
+        waitForDefined(() => { return this.#ipc.recv() },50,1000).then((msg) => {
+            if (msg.type != "new") {
                 throw Error("Glass sent unexpected message")
             }
             this.document = msg.document
             this.#id = msg.id
             if (on_load) on_load()
+        }).catch((err:Error)=>{
+            //ts ignore bc some browsers support cause and some don't, we're already doing esnext and most of those support it
+            //@ts-ignore
+            throw new Error("Glass timed out", { cause: err });
         })
     }
 
@@ -90,22 +93,28 @@ class GWindow {
 }
 
 function readFile(fd: FSFD | undefined): Uint8Array {
-    let bytes: number[] = []
-    if (fd) {
-        let out: number | null = fd.read()
-        while (out !== null) {
-            bytes.push(out)
-            out = fd.read()
-        }
-    }
-    return new Uint8Array(bytes)
+    if (!fd) return new Uint8Array(0);
+    fd.seek(0); // start from beginning
+    return fd.readBLK(fd.length()) || new Uint8Array(0);
 }
 
 function writeFile(fd: FSFD | undefined, contents: Uint8Array) {
     if (!fd) { throw Error("Could not write to undefined file descriptor") }
-    for (let i = 0; i < contents.length; i++) {
-        fd.write(contents[i])
-    }
+    fd.writeBLK(contents)
 }
 
-export {GWindow, waitForDefined, readFile, writeFile}
+async function importFromFs(fd: FSFD) {
+    const buffer_module = readFile(fd).buffer as ArrayBuffer
+    const blob = new Blob([buffer_module], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    let module = await import(url);
+    // give js some more time to load it
+    setTimeout(() => {URL.revokeObjectURL(url);},10*1000)
+    return module
+}
+
+function sleep(ms: number) {
+    return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+export { GWindow, waitForDefined, readFile, writeFile, importFromFs, sleep }

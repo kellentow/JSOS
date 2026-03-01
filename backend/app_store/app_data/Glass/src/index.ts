@@ -112,8 +112,6 @@ function IPCHandler(ipc: IPCWrapper) {
                 window_iframe.srcdoc = ""
                 window_iframe.sandbox = "allow-same-origin"
                 window_iframe.addEventListener("load", () => {
-                    console.log("New window made", window_iframe)
-                    console.log("Sending IPC message to window", { type: "new", document: window_iframe.contentDocument, id })
                     ipc.send({ type: "new", document: window_iframe.contentDocument, id })
                     window_frame.style.display = "inline-block"
                 })
