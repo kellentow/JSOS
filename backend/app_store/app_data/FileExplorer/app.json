@@ -1,6 +1,7 @@
 {
     "name":"FileExplorer",
     "appid":"FileExplorer",
+    "location":"/app/FileExplorer",
     "description":"The default file explorer for JSOS.",
     "version":"1.0.0",
     "author":"JSOS Dev",

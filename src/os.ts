@@ -1,3 +1,8 @@
+//@ts-ignore
+if (BUILD_TYPE == "bundle") {
+    import("./networking.js")
+}
+
 import { OS, OS_Process, ProcessKey, FS, FSFD, FSDir} from './os-classes.js'
 import { importFromFs, readFile, writeFile, sleep} from './helpers.js'
 
@@ -68,7 +73,7 @@ async function save_to_fs(url:string, path:string) {
     writeFile(fs.getFD(path,0o7),unzipit_array)
 }
 
-let first_boot = await cookieStore.get("first") || "false"
+let first_boot = await localStorage.getItem("first") || "false"
 if (first_boot == "false") {
     // wipe the fs just in case     nvm
     //(fs.getNode("/") as FSDir).children = {}
@@ -89,7 +94,7 @@ if (first_boot == "false") {
     await get_app("/app/Terminal", "Terminal")
 
     fs.save()
-    cookieStore.set("first", "true")
+    localStorage.setItem("first", "true")
     window.location.reload()
 } else {
     await run_app("/app/Glass", "Glass", 1)

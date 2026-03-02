@@ -1,6 +1,7 @@
 {
     "name":"Terminal",
     "appid":"Terminal",
+    "location":"/app/Terminal",
     "description":"The default Terminal for JSOS.",
     "version":"1.0.0",
     "author":"JSOS Dev",

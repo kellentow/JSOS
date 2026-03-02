@@ -1,6 +1,7 @@
 {
     "name":"TaskManager",
     "appid":"TaskManager",
+    "location":"/app/TaskManager",
     "description":"The default task manager for JSOS.",
     "version":"1.0.0",
     "author":"JSOS Dev",

@@ -1,6 +1,7 @@
 {
     "name":"Glasstop",
     "appid":"Glasstop",
+    "location":"/app/Glasstop",
     "description":"The default desktop for JSOS.",
     "version":"1.0.0",
     "author":"JSOS Dev",

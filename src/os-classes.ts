@@ -55,7 +55,7 @@ class OS { // NOT FINISHED
     #scripts: Map<OS_Process, Sandbox> = new Map();
     #fs: FS = FS.load()
 
-    #lastPID: number = 0;
+    #lastPID: number = -1;
     #root_proc: OS_Process;
     #root_key: ProcessKey;
 
@@ -93,13 +93,40 @@ class OS { // NOT FINISHED
     async createProcess(parentKey: ProcessKey, name: string, script: string, cwd: string = "/"): Promise<OS_Process | undefined> {
         if (!this.#processKeys.has(parentKey)) { return }
 
-        const sandbox = new Sandbox(script, name, {})
+        let proc: OS_Process;
+        let token = window.crypto.randomUUID()
+        let proc_getter = ()=>{return proc}
+        window.addEventListener("message", (e)=>{
+            console.log(e.data, token)
+            if (e.data == token) {
+                proc_getter().kill(this.#root_key)
+            }
+        })
+        
+        let watchdog_script = `
+// added by os
+window.onerror = (...args)=>{
+    console.error(...args)
+    setTimeout(()=>{
+        window.parent.postMessage("${token}")
+    },100)
+}
+
+window.onunhandledrejection = (...args)=>{
+    console.error(...args)
+    setTimeout(()=>{
+        window.parent.postMessage("${token}")
+    },100)
+}
+        `
+
+        const sandbox = new Sandbox([watchdog_script,script], name, {})
 
         await waitForNonNull(() => sandbox.env(), 50)
 
         let parent = this.#processKeys.get(parentKey) as OS_Process
 
-        let proc = new OS_Process(name, this, parent, sandbox)
+        proc = new OS_Process(name, this, parent, sandbox)
 
         let key = proc.getKey(this.#root_key) as ProcessKey
 
@@ -169,9 +196,11 @@ class OS { // NOT FINISHED
 
     killProcess(key: ProcessKey, target?: OS_Process) {
         if (!target) {
-            if (this.#processKeys.has(key) && this.isRoot(key)) {
+            if (this.#processKeys.has(key)) {
                 target = this.#processKeys.get(key) as OS_Process;
             } else { return null }
+        } else {
+            if (!this.isRoot(key) && !(this.#processKeys.get(key)?.children.includes(target))) { return null} // is root or killer is parent of killee
         }
 
         let target_key = this.#processKeys.get(target)
@@ -243,7 +272,7 @@ class FSNode {
     owner: number = 0
     //group: number = 0
     // rwxr-xr-x
-    perms: number = 0o777
+    perms: number = 0o755
     type: NodeType = "Node"
     static registry: Record<string, typeof FSNode> = {}
 
@@ -602,14 +631,17 @@ class FS {
 class Sandbox {
     #element: HTMLIFrameElement;
     #name: string;
-    constructor(script: string, name?: string, override?: Partial<Window>) {
+    constructor(scripts: string[], name?: string, override?: Partial<Window>) {
         this.#name = name || "UNKNOWN"
         this.#element = document.createElement("iframe");
         this.#element.setAttribute("sandbox", "allow-scripts allow-same-origin");
         this.#element.style.width = "0px";
         this.#element.style.height = "0px";
         this.#element.style.border = "none";
-        this.#element.srcdoc = "<script>" + script + "</script>";
+        this.#element.srcdoc = "";
+        scripts.forEach((script)=>{
+            this.#element.srcdoc += "<script>" + script + "</script>"
+        })
 
         let dummy = (...a: any[]): any => { return () => { } }
         const good_console = globalThis.console
@@ -685,7 +717,7 @@ class OS_Process {
                 }
                 return new Response(undefined, { status: 403 })
             },
-            prockey: this.#key,
+            prockey: this.#key
         } as any);
     }
 
@@ -711,6 +743,10 @@ class OS_Process {
     }
 
     getPID(): number {
+        return this.#pid;
+    }
+
+    get pid() {
         return this.#pid;
     }
 

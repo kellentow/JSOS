@@ -1,6 +1,7 @@
 {
     "name":"Glass",
     "appid":"Glass",
+    "location":"/app/Glass",
     "description":"The default dm for JSOS.",
     "version":"1.0.0",
     "author":"JSOS Dev",

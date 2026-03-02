@@ -1,5 +1,65 @@
-import { OS, OS_Process, IPCWrapper, FSWrapper, FSPermission, Permission, ProcessKey } from "./../../../../../src/os-classes"
-import { GWindow, importFromFs, readFile, waitForDefined, writeFile } from "./../../../../../src/helpers"
+import { FSWrapper, IPCWrapper, OS, OS_Process, ProcessKey } from "./../../../../../src/os-classes"
+import { GWindow, importFromFs, readFile, sleep, waitForDefined, writeFile } from "./../../../../../src/helpers"
+
+class Command {
+    #proc:OS_Process
+    #ipc:IPCWrapper
+    #os:OS; // needed for .kill()
+    #key:ProcessKey; // needed for .kill()
+    #stdout_buffer:Uint8Array = new Uint8Array(0)
+    #pid:number;
+    code:number|undefined=undefined
+    constructor(os:OS,fs:FSWrapper,proc:OS_Process,key:ProcessKey,path:string,args:string[]) {
+        let name = path.split("/").pop() as string
+        let fd = fs.open(path)
+
+        this.#os = os
+        this.#key = key
+        this.#proc = proc.createChildProcess(key,name,new TextDecoder().decode(readFile(fd)),window.cwd) as any as OS_Process
+        this.#pid = this.#proc.pid
+
+        os.createIPC(proc,this.#proc)
+        this.#ipc = window.IPCs[window.IPCs.length - 1]
+
+        let intervalID = setInterval(()=>{
+            let msg = this.#ipc.recv()
+            while (msg !== undefined) {
+                if (msg.type == "code") {
+                    this.code = msg.code
+                } else if (msg.type == "stdout") {
+                    let new_buf = new Uint8Array(this.#stdout_buffer.length + msg.content.length)
+                    new_buf.set(this.#stdout_buffer,0)
+                    new_buf.set(msg.content,this.#stdout_buffer.length)
+                    this.#stdout_buffer = new_buf
+                } else {
+                    console.warn("Unknown IPC Message: ",msg)
+                }
+                msg = this.#ipc.recv()
+            }
+            console.log(os.getProcess(this.#pid))
+            if (os.getProcess(this.#pid) === undefined) { // process quit
+                if (this.code === undefined) { // didn't tell us a code to give
+                    this.code = 1 // default to 1
+                    clearInterval(intervalID)
+                }
+            }
+        },100)
+    }
+
+    stdin(text:string) {
+        this.#ipc.send({type:"stdin", content:new TextEncoder().encode(text)})
+    }
+
+    stdout() {
+        let content = this.#stdout_buffer
+        this.#stdout_buffer = new Uint8Array(0)
+        return content
+    }
+
+    kill() {
+        this.#os.killProcess(this.#key,this.#proc)
+    }
+}
 
 document.addEventListener("os-load", async () => {
     let process = (window.proc as OS_Process)
@@ -54,7 +114,10 @@ document.addEventListener("os-load", async () => {
             let root_key = os.getRootProc().getKey(window.prockey) as ProcessKey
             let term_code = new TextDecoder().decode(readFile(fs.open(window.cwd + "/index.js")))
 
-            os.getRootProc().createChildProcess(root_key, "Terminal", term_code, window.cwd)
+            let new_proc = await os.getRootProc().createChildProcess(root_key, "Terminal", term_code, window.cwd)
+            if (new_proc !== undefined) {
+                os.setProcUser(root_key,new_proc,uid)
+            }
             process.kill(window.prockey)
         }
         if (xterm_fd === undefined) throw new Error("Failed to get xterm.js")
@@ -89,10 +152,15 @@ document.addEventListener("os-load", async () => {
         let user = "guest"
         let host = "JSOS"
 
-        term.write(`${user}@${host}$ `)
-
         let currentLine = '';
-        let cur_command:any = undefined;
+        let cur_command:undefined | Command = undefined;
+
+        function resetInput() {
+            currentLine = '';
+            cur_command = undefined
+            term.write(`${user}@${host}$ `)
+        }
+        resetInput()
 
         term.onData((data) => {
             if (cur_command === undefined) {
@@ -100,10 +168,7 @@ document.addEventListener("os-load", async () => {
                     term.write('\r\n');
                     const command = currentLine.trim();
                     handleCommand(command);
-                    currentLine = '';
-                    if (cur_command === undefined) { //no command was run, or finished instantly
-                        term.write(`${user}@${host}$ `)
-                    }
+                    if (cur_command === undefined) resetInput()
 
                 } else if (data == "\u007F") {
                     if (currentLine.length > 0) {
@@ -116,14 +181,34 @@ document.addEventListener("os-load", async () => {
                     term.write(data);
                 }
             } else {
-                if (data === '\x03') {
-                    term.writeln('^C');
-                    currentLine = '';
-                    term.write(`${user}@${host}$ `)
-                    cur_command = undefined
-                }
+                cur_command.stdin(data)
+            }
+
+            if (data === '\u0003') {
+                term.writeln('^C');
+                currentLine = '';
+                term.write(`${user}@${host}$ `)
+                cur_command?.kill()
+                resetInput()
+            } else if (data === '\u0004') {
+                term.writeln('^D');
+                currentLine = '';
+                cur_command?.kill()
+                resetInput()
+                handleCommand("exit")
             }
         });
+
+        setInterval(()=>{
+            if (cur_command !== undefined) {
+                term.write(cur_command.stdout())
+                console.log(cur_command.code)
+                if (cur_command.code !== undefined) { // the proc quit
+                    term.writeln(""+cur_command.code)
+                    resetInput()
+                }
+            }
+        },100)
 
         function handleCommand(command: string) {
             console.log('User ran command:', command);
@@ -154,8 +239,23 @@ document.addEventListener("os-load", async () => {
             if (in_str) return term.writeln("Error: Unterminated String")
             if (literal) return term.writeln("Error: Unterminated Literal")
             console.log("parsed command ",parts)
-            term.writeln("sorry this terminal doesn't work right now")
-            cur_command = "temp" //replace later with class Command
+
+            if (parts[0] == "exit") {
+                // sleep to mimic real terminal emulators
+                sleep(100).then(()=>process.kill(window.prockey))
+            } else if (parts[0].startsWith("/")) {
+                if (fs.stat(parts[0])) {
+                    cur_command = new Command(os,fs,process,window.prockey,parts[0],parts.slice(1))
+                } else {
+                    term.writeln("Command not found")
+                }
+            } else {
+                if (fs.stat("/bin/"+parts[0])) {
+                    cur_command = new Command(os,fs,process,window.prockey,"/bin/"+parts[0],parts.slice(1))
+                } else {
+                    term.writeln("Command not found")
+                }
+            }
         }
     })
 })

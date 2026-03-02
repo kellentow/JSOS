@@ -7,7 +7,8 @@ esbuild src/**/*.ts \
   --platform=browser \
   --sourcemap \
   --loader:.ts=ts \
-  --define:BUILD='"'"$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)"'"'
+  --define:BUILD='"'"$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)"'"' \
+  --define:BUILD_TYPE='"live"'
 rm -rf static/**/
 mv dist/* static/
 
