@@ -7,6 +7,8 @@ mkdir bundle_backend/app_store
 mkdir bundle_backend/app_store/download
 mkdir bundle_backend/app_store/app_data
 
+cp backend/app_store/apps.csv bundle_backend/app_store/apps.csv
+
 cp -r backend/app_store/app_data/*.zip bundle_backend/app_store/download
 cp -r backend/app_store/app_data/*.metadata bundle_backend/app_store/app_data
 

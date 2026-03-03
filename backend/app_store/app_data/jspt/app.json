@@ -1,7 +1,8 @@
 {
-    "name":"JSPT",
-    "appid":"JSPT",
+    "name":"jspt",
+    "appid":"jspt",
     "location":"/bin/",
+    "version": "1.0.0",
     "description":"The package manager for JSOS",
     "author":"JSOS Dev",
     "license":"MPL 2.0",

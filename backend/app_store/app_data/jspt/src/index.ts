@@ -70,15 +70,17 @@ document.addEventListener("os-load", async () => {
             let apps = (await csv_resp.text()).split(",")
             for (let i=0; i<apps.length; i++) {
                 let id = apps[i]
-                let app_data:packageData = await (await fetch("/backend/app_store/app_data")).json()
+                let app_data:packageData = await (await fetch("/backend/app_store/app_data/"+id)).json()
                 packages[id] = app_data
             }
+            break;
         }
         case "list": {
             Object.keys(packages).forEach((id)=>{
                 let v = packages[id]
-                stdout(`${v.name} ${v.version} - ${v.description}`)
+                stdout(`${v.name} ${v.version} - ${v.description}\r\n`)
             })
+            break;
         }
         case "install": {
             let target = window.args[1]
@@ -92,9 +94,11 @@ document.addEventListener("os-load", async () => {
             break;
         }
         default: {
-            stdout(`"${window.args[0]}" is an unknown action`)
+            stdout(`"${window.args[0]}" is an unknown action\r\n`)
             await exit(1)
         }
     }
+    writeFile(fs.open("/etc/jspt/status"),new TextEncoder().encode(JSON.stringify(status)))
+    writeFile(fs.open("/etc/jspt/packages"),new TextEncoder().encode(JSON.stringify(packages)))
     await exit(0)
 })
