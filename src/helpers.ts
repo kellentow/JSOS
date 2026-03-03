@@ -10,6 +10,7 @@ declare global {
         fs: () => FSWrapper;
         requestSudo: (reason: string) => boolean;
         cwd: string;
+        args: string[];
     }
 }
 

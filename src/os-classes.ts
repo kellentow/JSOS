@@ -65,7 +65,6 @@ class OS { // NOT FINISHED
         this.#processes.push(this.#root_proc)
         this.#root_key = this.#root_proc.getKey() as ProcessKey
         this.#processKeys.set(this.#root_key, this.#root_proc)
-        this.#children.set(this.#root_proc, []);
         this.#parent.set(this.#root_proc, this)
         this.#procAs.set(this.#root_proc, 0)
         this.#fs.save()
@@ -90,7 +89,7 @@ class OS { // NOT FINISHED
         return this.#lastPID
     }
 
-    async createProcess(parentKey: ProcessKey, name: string, script: string, cwd: string = "/"): Promise<OS_Process | undefined> {
+    async createProcess(parentKey: ProcessKey, name: string, script: string, cwd: string = "/", args: string[] = []): Promise<OS_Process | undefined> {
         if (!this.#processKeys.has(parentKey)) { return }
 
         let proc: OS_Process;
@@ -105,6 +104,9 @@ class OS { // NOT FINISHED
         
         let watchdog_script = `
 // added by os
+
+window.args = ${JSON.stringify(args)}
+
 window.onerror = (...args)=>{
     console.error(...args)
     setTimeout(()=>{
@@ -127,6 +129,8 @@ window.onunhandledrejection = (...args)=>{
         let parent = this.#processKeys.get(parentKey) as OS_Process
 
         proc = new OS_Process(name, this, parent, sandbox)
+
+        parent.children.push(proc)
 
         let key = proc.getKey(this.#root_key) as ProcessKey
 
@@ -157,7 +161,6 @@ window.onunhandledrejection = (...args)=>{
 
         this.#perms.set(proc, this.#perms.get(parent) as number)
 
-        this.#children.get(parent)?.push(proc)
         this.#parent.set(proc, parent)
 
         this.#scripts.set(proc, sandbox)
@@ -205,7 +208,7 @@ window.onunhandledrejection = (...args)=>{
 
         let target_key = this.#processKeys.get(target)
 
-        for (let child of this.#children.get(target) || []) {
+        for (let child of target.children) {
             this.killProcess(child.getKey(this.#root_proc) as any);
         }
         this.#scripts.get(target)?.destroy()
@@ -213,9 +216,8 @@ window.onunhandledrejection = (...args)=>{
         this.#processKeys.delete(target_key as ProcessKey)
         this.#processes = this.#processes.filter((v) => v !== target)
         let parent = this.#parent.get(target)
-        if (parent instanceof OS_Process) {
-            this.#children.set(parent, this.#children.get(parent)?.filter((v) => v !== target) as OS_Process[])
-            parent.children = parent.children.filter((v) => v !== target)
+        if (parent !== this && parent !== undefined) {
+            (parent as OS_Process).children = (parent as OS_Process).children.filter((v) => v !== target)
         }
         this.#parent.delete(target)
         this.#procAs.delete(target)
@@ -768,19 +770,16 @@ class OS_Process {
         return this.getPermissions(type);
     }
 
-    async createChildProcess(key: ProcessKey, name: string, code: string, cwd: string = "/"): Promise<OS_Process | undefined> {
+    async createChildProcess(key: ProcessKey, name: string, code: string, cwd: string = "/", args: string[] = []): Promise<OS_Process | undefined> {
         if (key !== this.#key) return
         if (this.getPermissions(Permission.CreateProcess)) { // Check for create child process permission
-            let child = await this.#os.createProcess(this.#key, name, code, cwd) as OS_Process;
-            this.children.push(child);
+            let child = await this.#os.createProcess(this.#key, name, code, cwd, args) as OS_Process;
             return child;
         }
     }
 
     kill(key: ProcessKey): void {
-        if (this.#key == key || this.#os.isRoot(key)) {
-            this.#os.killProcess(this.#key);
-        }
+        this.#os.killProcess(key,this);
     }
 
     getParent(): OS_Process | null {

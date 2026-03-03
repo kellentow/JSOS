@@ -10,6 +10,7 @@ mkdir bundle_backend/app_store/app_data
 cp -r backend/app_store/app_data/*.zip bundle_backend/app_store/download
 cp -r backend/app_store/app_data/*.metadata bundle_backend/app_store/app_data
 
+shopt -s nullglob
 cd bundle_backend/app_store/download
 for file in *; do
     new_name="${file%.*}"
@@ -23,6 +24,7 @@ for file in *; do
     mv "$file" "$new_name"
 done
 cd ../../../
+shopt -u nullglob
 
 python3 pack.py ./bundle_backend/ ./src/assets.json
 
@@ -39,7 +41,8 @@ esbuild src/os.ts \
   --loader:.ts=ts \
   --bundle \
   --define:BUILD='"'"$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)"'"' \
-  --define:BUILD_TYPE='"bundle"'
+  --define:BUILD_TYPE='"bundle"' #\
+  #--minify
 
 rm dist/jsos.html
 touch dist/jsos.html

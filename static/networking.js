@@ -1,56 +1,18 @@
-if (typeof window.send !== "function") {
-  let queueSend = function(a, b, c, d) {
-    queue.push([a, b, c, d]);
-  }, setupWebSocket = function() {
-    if (ws.readyState === WebSocket.OPEN) {
-      return;
-    } else if (ws.readyState === WebSocket.CONNECTING) {
-      setTimeout(setupWebSocket, 100);
-    } else {
-      ws = new WebSocket("wss://ws.sleepyis.dev");
-      ws.onopen = () => {
-        window.send = function(a, b, c, d) {
-          let msg = JSON.stringify([a, b, c, d]);
-          ws.send(msg);
-        };
-        while (queue.length > 0) {
-          let [a, b, c, d] = queue.shift();
-          window.send(a, b, c, d);
-        }
-      };
-      ws.onmessage = (event) => {
-        let data = event.data;
-        let [a, b, c, d] = JSON.parse(data);
-        window.get(a, b, c, d);
-      };
-      ws.onerror = (event) => {
-        console.error("WebSocket error:", event);
-        ws.close();
-      };
-      ws.onclose = (event) => {
-        if (!event.wasClean) {
-          console.error("WebSocket closed unexpectedly:", event);
-          setTimeout(setupWebSocket, 1e3);
-        }
-        window.send = queueSend;
-      };
-    }
-  };
-  var queueSend2 = queueSend, setupWebSocket2 = setupWebSocket;
-  let ws = new WebSocket("wss://ws.sleepyis.dev");
-  let queue = [];
-  window.send = queueSend;
-  setupWebSocket();
-  console.warn("Environment did not supply window.send, using default websocket to ws.sleepyis.dev");
-  console.warn("This may not be wanted, if not please supply own window.send and window.get caller");
-}
 const protocolHandlers = /* @__PURE__ */ new Map();
 const old_fetch = globalThis.fetch;
 function registerProtocol(scheme, handler) {
   protocolHandlers.set(scheme, handler);
 }
-registerProtocol("http", old_fetch);
-registerProtocol("https", old_fetch);
+let patchfetch = (input, init) => {
+  setTimeout(() => console.log(input.toString(), window.origin), 1);
+  if (input.toString().startsWith(window.origin + "/backend/") || input.toString().startsWith("/backend/")) {
+    let asset_url = "asset://" + input.toString().replace(window.origin, "").replace("/backend/", "");
+    return globalThis.fetch(asset_url, init);
+  }
+  return old_fetch(input, init);
+};
+registerProtocol("http", patchfetch);
+registerProtocol("https", patchfetch);
 globalThis.fetch = async (input, init) => {
   if (!input)
     input = "";
@@ -117,6 +79,7 @@ import * as untyped_assets from "./assets.json";
   registerProtocol("asset", async (input, init) => {
     let url = typeof input === "string" ? input : input.toString();
     const assetKey = url.substring(8);
+    console.log("Requesting asset:", assetKey);
     if (decoded.has(assetKey)) {
       decoded.touch(assetKey);
       let [data, mime2] = decoded.get(assetKey);

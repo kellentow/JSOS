@@ -2,52 +2,57 @@ import { FSWrapper, IPCWrapper, OS, OS_Process, ProcessKey } from "./../../../..
 import { GWindow, importFromFs, readFile, sleep, waitForDefined, writeFile } from "./../../../../../src/helpers"
 
 class Command {
-    #proc:OS_Process
-    #ipc:IPCWrapper
-    #os:OS; // needed for .kill()
-    #key:ProcessKey; // needed for .kill()
-    #stdout_buffer:Uint8Array = new Uint8Array(0)
-    #pid:number;
-    code:number|undefined=undefined
-    constructor(os:OS,fs:FSWrapper,proc:OS_Process,key:ProcessKey,path:string,args:string[]) {
+    #proc: OS_Process | undefined
+    #ipc: IPCWrapper | undefined
+    #os: OS; // needed for .kill()
+    #key: ProcessKey; // needed for .kill()
+    #stdout_buffer: Uint8Array = new Uint8Array(0)
+    #pid: number | undefined;
+    code: number | undefined = undefined
+    constructor(os: OS, fs: FSWrapper, p_proc: OS_Process, key: ProcessKey, path: string, args: string[]) {
         let name = path.split("/").pop() as string
+        console.log("creating process", path, name)
         let fd = fs.open(path)
 
         this.#os = os
         this.#key = key
-        this.#proc = proc.createChildProcess(key,name,new TextDecoder().decode(readFile(fd)),window.cwd) as any as OS_Process
-        this.#pid = this.#proc.pid
+        p_proc.createChildProcess(key, name, new TextDecoder().decode(readFile(fd)), window.cwd, args).then((proc) => {
+            this.#proc = proc as any as OS_Process
 
-        os.createIPC(proc,this.#proc)
-        this.#ipc = window.IPCs[window.IPCs.length - 1]
+            this.#pid = this.#proc.pid
 
-        let intervalID = setInterval(()=>{
-            let msg = this.#ipc.recv()
-            while (msg !== undefined) {
-                if (msg.type == "code") {
-                    this.code = msg.code
-                } else if (msg.type == "stdout") {
-                    let new_buf = new Uint8Array(this.#stdout_buffer.length + msg.content.length)
-                    new_buf.set(this.#stdout_buffer,0)
-                    new_buf.set(msg.content,this.#stdout_buffer.length)
-                    this.#stdout_buffer = new_buf
-                } else {
-                    console.warn("Unknown IPC Message: ",msg)
+            os.createIPC(p_proc, this.#proc)
+            this.#ipc = window.IPCs[window.IPCs.length - 1]
+
+            let intervalID = setInterval(() => {
+                if (!this.#ipc || !this.#pid) return
+                let msg = this.#ipc.recv()
+                while (msg !== undefined) {
+                    if (msg.type == "code") {
+                        this.code = msg.code
+                    } else if (msg.type == "stdout") {
+                        let new_buf = new Uint8Array(this.#stdout_buffer.length + msg.content.length)
+                        new_buf.set(this.#stdout_buffer, 0)
+                        new_buf.set(msg.content, this.#stdout_buffer.length)
+                        this.#stdout_buffer = new_buf
+                    } else {
+                        console.warn("Unknown IPC Message: ", msg)
+                    }
+                    msg = this.#ipc.recv()
                 }
-                msg = this.#ipc.recv()
-            }
-            console.log(os.getProcess(this.#pid))
-            if (os.getProcess(this.#pid) === undefined) { // process quit
-                if (this.code === undefined) { // didn't tell us a code to give
-                    this.code = 1 // default to 1
-                    clearInterval(intervalID)
+                if (os.getProcess(this.#pid) === undefined) { // process quit
+                    if (this.code === undefined) { // didn't tell us a code to give
+                        this.code = 1 // default to 1
+                        clearInterval(intervalID)
+                    }
                 }
-            }
-        },100)
+            }, 100)
+        })
     }
 
-    stdin(text:string) {
-        this.#ipc.send({type:"stdin", content:new TextEncoder().encode(text)})
+    stdin(text: string) {
+        if (!this.#ipc) return
+        this.#ipc.send({ type: "stdin", content: new TextEncoder().encode(text) })
     }
 
     stdout() {
@@ -57,7 +62,7 @@ class Command {
     }
 
     kill() {
-        this.#os.killProcess(this.#key,this.#proc)
+        this.#os.killProcess(this.#key, this.#proc)
     }
 }
 
@@ -116,7 +121,7 @@ document.addEventListener("os-load", async () => {
 
             let new_proc = await os.getRootProc().createChildProcess(root_key, "Terminal", term_code, window.cwd)
             if (new_proc !== undefined) {
-                os.setProcUser(root_key,new_proc,uid)
+                os.setProcUser(root_key, new_proc, uid)
             }
             process.kill(window.prockey)
         }
@@ -153,7 +158,7 @@ document.addEventListener("os-load", async () => {
         let host = "JSOS"
 
         let currentLine = '';
-        let cur_command:undefined | Command = undefined;
+        let cur_command: undefined | Command = undefined;
 
         function resetInput() {
             currentLine = '';
@@ -199,16 +204,15 @@ document.addEventListener("os-load", async () => {
             }
         });
 
-        setInterval(()=>{
+        setInterval(() => {
             if (cur_command !== undefined) {
                 term.write(cur_command.stdout())
-                console.log(cur_command.code)
                 if (cur_command.code !== undefined) { // the proc quit
-                    term.writeln(""+cur_command.code)
+                    //term.writeln("" + cur_command.code) // out code
                     resetInput()
                 }
             }
-        },100)
+        }, 100)
 
         function handleCommand(command: string) {
             console.log('User ran command:', command);
@@ -216,7 +220,7 @@ document.addEventListener("os-load", async () => {
             let part = 0
             let literal = false
             let in_str = false
-            for (let i=0; i<command.length; i++) {
+            for (let i = 0; i < command.length; i++) {
                 let char = command[i]
                 if (literal) { // ex \\ -> \    \" -> "
                     parts[part] += char
@@ -238,20 +242,22 @@ document.addEventListener("os-load", async () => {
             }
             if (in_str) return term.writeln("Error: Unterminated String")
             if (literal) return term.writeln("Error: Unterminated Literal")
-            console.log("parsed command ",parts)
+            console.log("parsed command ", parts)
 
             if (parts[0] == "exit") {
                 // sleep to mimic real terminal emulators
-                sleep(100).then(()=>process.kill(window.prockey))
+                sleep(100).then(() => os.killProcess(window.prockey))
             } else if (parts[0].startsWith("/")) {
                 if (fs.stat(parts[0])) {
-                    cur_command = new Command(os,fs,process,window.prockey,parts[0],parts.slice(1))
+                    cur_command = new Command(os, fs, process, window.prockey, parts[0], parts.slice(1))
                 } else {
                     term.writeln("Command not found")
                 }
             } else {
-                if (fs.stat("/bin/"+parts[0])) {
-                    cur_command = new Command(os,fs,process,window.prockey,"/bin/"+parts[0],parts.slice(1))
+                if (fs.stat("/bin/" + parts[0]+"/index.js") && !fs.isdir("/bin/" + parts[0] + "/index.js")) {
+                    cur_command = new Command(os, fs, process, window.prockey, "/bin/" + parts[0] + "/index.js", parts.slice(1))
+                } else if (fs.stat("/bin/" + parts[0]) && !fs.isdir("/bin/" + parts[0])) {
+                    cur_command = new Command(os, fs, process, window.prockey, "/bin/" + parts[0], parts.slice(1))
                 } else {
                     term.writeln("Command not found")
                 }

@@ -87,6 +87,12 @@ if (first_boot == "false") {
 
     await save_to_fs("https://unpkg.com/unzipit@1.4.2/dist/unzipit.module.js","/lib/unzipit.js")
 
+    // get JSPT
+    let jspt_resp = await fetch("/backend/app_store/download/jspt")
+    let jspt_array = new Uint8Array(await jspt_resp.arrayBuffer())
+    fs.mkdir("/bin/jspt")
+    extract_zip("/bin/jspt", jspt_array.buffer)
+
     await get_app("/app/Glass", "Glass")
     await get_app("/app/Glasstop", "Glasstop")
     await get_app("/app/FileExplorer", "FileExplorer")
